@@ -490,15 +490,11 @@ window.addEventListener('wheel', (event) => {
 })
 
 function openReply(email) {
-  const fullEmail = emailStore.detailMap[email.emailId]
-  if (!fullEmail) return
-  uiStore.writerRef.openReply(fullEmail)
+  uiStore.writerRef.openReply(email)
 }
 
 function openForward(email) {
-  const fullEmail = emailStore.detailMap[email.emailId]
-  if (!fullEmail) return
-  uiStore.writerRef.openForward(fullEmail)
+  uiStore.writerRef.openForward(email)
 }
 
 function visibleChange(e) {

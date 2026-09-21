@@ -1,72 +1,96 @@
 <template>
-  <el-scrollbar class="scroll">
-    <div>
-      <div class="title" >
-        <Icon icon="mdi:email-outline" width="24" height="24" />
-        <div>{{settingStore.settings.title}}</div>
-      </div>
-      <el-menu :collapse="false" text-color="#fff" active-text-color="#fff" style="margin-top: 10px">
-        <el-menu-item @click="router.push({name: 'email'})" index="email"
-                      :class="route.meta.name === 'email' ? 'choose-item' : ''">
-          <Icon icon="hugeicons:mailbox-01" width="20" height="20" />
-          <span class="menu-name" style="margin-left: 16px">{{$t('inbox')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'send'})" index="send" v-perm="'email:send'"
-                      :class="route.meta.name === 'send' ? 'choose-item' : ''">
-          <Icon icon="cil:send" width="20" height="20" />
-          <span class="menu-name" style="margin-left: 16px">{{$t('sent')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'draft'})" index="draft" v-perm="'email:send'"
-                      :class="route.meta.name === 'draft' ? 'choose-item' : ''">
-          <Icon icon="ep:document" width="19" height="19" />
-          <span class="menu-name" style="margin-left: 17px">{{$t('drafts')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'star'})" index="star"
-                      :class="route.meta.name === 'star' ? 'choose-item' : ''">
-          <Icon icon="solar:star-line-duotone" width="20" height="20" />
-          <span class="menu-name" style="margin-left: 16px">{{$t('starred')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'setting'})" index="setting"
-                      :class="route.meta.name === 'setting' ? 'choose-item' : ''">
-          <Icon icon="fluent:settings-48-regular" width="20" height="20" />
-          <span class="menu-name" style="margin-left: 16px">{{$t('settings')}}</span>
-        </el-menu-item>
-        <div class="manage-title" v-perm="['all-email:query','user:query','role:query','setting:query','analysis:query','reg-key:query']">
-          <div>{{$t('manage')}}</div>
-        </div>
-        <el-menu-item @click="router.push({name: 'analysis'})" index="analysis" v-perm="'analysis:query'"
-                      :class="route.meta.name === 'analysis' ? 'choose-item' : ''">
-          <Icon icon="fluent:data-pie-20-regular" width="24" height="24" />
-          <span class="menu-name" style="margin-left: 13px">{{$t('analytics')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'user'})" index="setting" v-perm="'user:query'"
-                      :class="route.meta.name === 'user' ? 'choose-item' : ''">
-          <Icon icon="si:user-alt-2-line" width="20" height="20" />
-          <span class="menu-name" style="margin-left: 16px">{{$t('allUsers')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'all-email'})" index="all-email" v-perm="'all-email:query'"
-                      :class="route.meta.name === 'all-email' ? 'choose-item' : ''">
-          <Icon icon="fluent:mail-list-28-regular" width="22" height="22" />
-          <span class="menu-name" style="margin-left: 15px">{{$t('allMail')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'role'})" index="setting" v-perm="'role:query'"
-                      :class="route.meta.name === 'role' ? 'choose-item' : ''">
-          <Icon icon="fluent:lock-closed-16-regular" width="22" height="22" />
-          <span class="menu-name" style="margin-left: 15px">{{$t('permissions')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'reg-key'})" index="reg-key" v-perm="'reg-key:query'"
-                      :class="route.meta.name === 'reg-key' ? 'choose-item' : ''">
-          <Icon icon="fluent:fingerprint-20-filled" width="22" height="22" />
-          <span class="menu-name" style="margin-left: 15px">{{$t('inviteCode')}}</span>
-        </el-menu-item>
-        <el-menu-item @click="router.push({name: 'sys-setting'})" index="sys-setting" v-perm="'setting:query'"
-                      :class="route.meta.name === 'sys-setting' ? 'choose-item' : ''">
-          <Icon icon="eos-icons:system-ok-outlined" width="18" height="18" style="margin-left: 2px" />
-          <span class="menu-name" style="margin-left: 17px">{{$t('SystemSettings')}}</span>
-        </el-menu-item>
-      </el-menu>
+  <div class="aside-shell">
+    <div class="brand" @click="router.push({name: 'email'})">
+      <span class="brand-badge"><Icon icon="mdi:email-outline" :width="20" :height="20" /></span>
+      <div class="brand-name">{{settingStore.settings.title}}</div>
     </div>
-  </el-scrollbar>
+
+    <el-scrollbar class="scrollbar">
+      <el-menu
+          :collapse="false"
+          :default-openeds="['mail', 'manage']"
+          class="glass-menu"
+          text-color="var(--aside-text)"
+          active-text-color="var(--aside-text-active)">
+        <!-- 收件箱：主入口，独立展示 -->
+        <el-menu-item @click="router.push({name: 'email'})" index="email"
+                      :class="route.meta.name === 'email' ? 'is-active' : ''">
+          <Icon icon="hugeicons:mailbox-01" :width="19" :height="19" />
+          <span class="menu-name">{{$t('inbox')}}</span>
+        </el-menu-item>
+
+        <!-- 邮件分类：已发送 / 草稿 / 收藏 -->
+        <el-sub-menu index="mail">
+          <template #title>
+            <Icon icon="fluent:folder-16-regular" :width="19" :height="19" />
+            <span class="menu-name">{{$t('mailbox')}}</span>
+          </template>
+          <el-menu-item @click="router.push({name: 'send'})" index="send" v-perm="'email:send'"
+                        :class="route.meta.name === 'send' ? 'is-active' : ''">
+            <Icon icon="cil:send" :width="17" :height="17" />
+            <span class="menu-name">{{$t('sent')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'draft'})" index="draft" v-perm="'email:send'"
+                        :class="route.meta.name === 'draft' ? 'is-active' : ''">
+            <Icon icon="ep:document" :width="16" :height="16" />
+            <span class="menu-name">{{$t('drafts')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'star'})" index="star"
+                        :class="route.meta.name === 'star' ? 'is-active' : ''">
+            <Icon icon="solar:star-line-duotone" :width="18" :height="18" />
+            <span class="menu-name">{{$t('starred')}}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- 管理与系统：合并同类管理功能 -->
+        <el-sub-menu index="manage" v-perm="['analysis:query','user:query','role:query','all-email:query','reg-key:query','setting:query']">
+          <template #title>
+            <Icon icon="majesticons:settings-gear-line" :width="19" :height="19" />
+            <span class="menu-name">{{$t('manage')}}</span>
+          </template>
+          <el-menu-item @click="router.push({name: 'analysis'})" index="analysis" v-perm="'analysis:query'"
+                        :class="route.meta.name === 'analysis' ? 'is-active' : ''">
+            <Icon icon="fluent:data-pie-20-regular" :width="18" :height="18" />
+            <span class="menu-name">{{$t('analytics')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'all-email'})" index="all-email" v-perm="'all-email:query'"
+                        :class="route.meta.name === 'all-email' ? 'is-active' : ''">
+            <Icon icon="fluent:mail-list-28-regular" :width="18" :height="18" />
+            <span class="menu-name">{{$t('allMail')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'user'})" index="user" v-perm="'user:query'"
+                        :class="route.meta.name === 'user' ? 'is-active' : ''">
+            <Icon icon="si:user-alt-2-line" :width="17" :height="17" />
+            <span class="menu-name">{{$t('allUsers')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'role'})" index="role" v-perm="'role:query'"
+                        :class="route.meta.name === 'role' ? 'is-active' : ''">
+            <Icon icon="fluent:lock-closed-16-regular" :width="18" :height="18" />
+            <span class="menu-name">{{$t('permissions')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'reg-key'})" index="reg-key" v-perm="'reg-key:query'"
+                        :class="route.meta.name === 'reg-key' ? 'is-active' : ''">
+            <Icon icon="fluent:fingerprint-20-filled" :width="18" :height="18" />
+            <span class="menu-name">{{$t('inviteCode')}}</span>
+          </el-menu-item>
+          <el-menu-item @click="router.push({name: 'sys-setting'})" index="sys-setting" v-perm="'setting:query'"
+                        :class="route.meta.name === 'sys-setting' ? 'is-active' : ''">
+            <Icon icon="eos-icons:system-ok-outlined" :width="16" :height="16" />
+            <span class="menu-name">{{$t('SystemSettings')}}</span>
+          </el-menu-item>
+        </el-sub-menu>
+      </el-menu>
+    </el-scrollbar>
+
+    <!-- 个人设置：常驻底部 -->
+    <div class="aside-footer">
+      <el-menu-item @click="router.push({name: 'setting'})" index="setting"
+                    :class="route.meta.name === 'setting' ? 'is-active' : ''">
+        <Icon icon="fluent:settings-48-regular" :width="19" :height="19" />
+        <span class="menu-name">{{$t('settings')}}</span>
+      </el-menu-item>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -77,103 +101,143 @@ import {useSettingStore} from "@/store/setting.js";
 
 const settingStore = useSettingStore();
 const route = useRoute();
-
 </script>
 
 <style lang="scss" scoped>
-
-.title {
-  margin: 15px 10px;
-  height: 45px;
-  border-radius: 6px;
+.aside-shell {
   display: flex;
-  position: relative;
-  font-size: 16px;
-  font-weight: bold;
+  flex-direction: column;
+  height: 100%;
+  width: 248px;
+  padding: 16px 12px 14px;
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), 6px 0 30px -22px rgba(30, 55, 110, 0.4);
+}
+
+.brand {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  color: #ffffff;
-  background: linear-gradient(135deg, #1890ff, #3a80dd);
-  transition: all 0.3s ease;
-  max-width: 240px;
+  gap: 12px;
+  height: 48px;
   padding: 0 10px;
-  > div {
+  margin-bottom: 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+
+  .brand-badge {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #4c9aff, #7b5cff);
+    box-shadow: 0 8px 20px -8px rgba(74, 130, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.2px;
+    color: var(--el-text-color-primary);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    max-width: calc(240px - 20px - 30px);
   }
-
-  :deep(.el-icon) {
-    flex-shrink: 0;
-    font-size: 20px;
-  }
-
-  .user-right-icon {
-    align-self: center;
-    position: absolute;
-    font-size: 12px;
-    right: 8px;
-    color: #ffffff;
-  }
-
 }
 
+.scrollbar {
+  flex: 1;
+  min-height: 0;
+}
 
-.manage-title {
+.glass-menu {
+  background: transparent;
+  border-right: 0;
+  /* 层级修正 */
+  :deep(.el-menu),
+  :deep(.el-sub-menu .el-menu) {
+    background: transparent;
+  }
+
+  :deep(.el-menu-item),
+  :deep(.el-sub-menu__title) {
+    height: 40px;
+    line-height: 40px;
+    margin: 3px 0;
+    padding: 0 12px !important;
+    border-radius: 12px;
+    color: var(--aside-text);
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+
+  :deep(.el-sub-menu .el-menu-item) {
+    height: 38px;
+    line-height: 38px;
+    padding-left: 24px !important;
+    font-size: 13px;
+  }
+
+  :deep(.el-sub-menu .el-menu-item .el-icon) {
+    margin-right: 10px;
+  }
+
+  :deep(.el-menu-item:hover),
+  :deep(.el-sub-menu__title:hover) {
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  :deep(.el-sub-menu__icon-arrow) {
+    transition: transform 0.25s ease;
+  }
+
+  :deep(.el-sub-menu.is-opened > .el-sub-menu__title .el-sub-menu__icon-arrow) {
+    transform: rotate(90deg);
+  }
+
+  :deep(.el-menu-item.is-active),
+  :deep(.el-menu .el-menu-item.is-active) {
+    background: linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9));
+    color: #fff !important;
+    box-shadow: 0 10px 24px -10px rgba(45, 100, 255, 0.6);
+  }
+}
+
+.aside-footer {
   margin-top: 10px;
-  padding-left: 20px;
-  color: #fff;
-}
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-border);
 
-.el-menu-item {
-  margin: 3px 10px !important;
-  border-radius: 6px;
-  height: 36px;
-  padding: 10px !important;
-}
+  :deep(.el-menu-item) {
+    height: 40px;
+    line-height: 40px;
+    margin: 3px 0;
+    border-radius: 12px;
+    padding: 0 12px !important;
+    color: var(--aside-text);
+  }
 
-.choose-item {
-  font-weight: 400;
-  background: var(--aside-menu-active-background) !important;
-  backdrop-filter: blur(4px);
-}
+  :deep(.el-menu-item:hover) {
+    background: rgba(255, 255, 255, 0.5);
+  }
 
-@media (hover: hover) {
-  .el-menu-item:hover {
-    background: rgba(255, 255, 255, 0.08) !important;
+  :deep(.el-menu-item.is-active) {
+    background: linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9));
+    color: #fff !important;
+    box-shadow: 0 10px 24px -10px rgba(45, 100, 255, 0.6);
   }
 }
 
 .menu-name {
   user-select: none;
-}
-
-
-:deep(.el-scrollbar__wrap--hidden-default ) {
-  background: var(--aside-backgound) !important;
-}
-
-:deep(.el-menu-item) {
-  background: var(--aside-backgound);
-}
-
-:deep(.el-menu) {
-  background: var(--aside-backgound);
-}
-
-.el-menu {
-  border-right: 0;
-  width: 260px;
-}
-
-:deep(.el-divider__text) {
-  background: var(--aside-backgound);
-  color: #FFFFFF;
-}
-
-.scroll {
-
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 </style>

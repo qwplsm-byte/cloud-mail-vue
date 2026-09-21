@@ -1,5 +1,5 @@
 <template>
-  <div :class="accountShow && hasPerm('account:query') ? 'main-box-show' : 'main-box-hide'">
+  <div :class="accountShow && hasPerm('account:query') ? 'main-box-show glass-stage' : 'main-box-hide glass-stage'">
     <div :class="accountShow && hasPerm('account:query') ? 'block-show' : 'block-hide'" @click="uiStore.accountShow = false"></div>
     <account  :class="accountShow && hasPerm('account:query') ? 'show' : 'hide'" />
     <router-view class="main-view" v-slot="{ Component,route }">
@@ -159,9 +159,25 @@ const handleResize = () => {
   height: calc(100% - 60px);
 }
 
+/* 内容舞台：液态玻璃卡片 */
+.glass-stage {
+  position: relative;
+  margin: 0 14px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  overflow: hidden;
+  @media (max-width: 767px) {
+    margin: 0 8px 8px;
+    border-radius: var(--radius-md);
+  }
+}
 
 .main-view {
-  background: var(--el-bg-color);
+  background: transparent;
 }
 
 

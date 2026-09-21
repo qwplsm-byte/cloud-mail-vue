@@ -32,6 +32,7 @@ export const useEmailStore = defineStore('email', {
                 })
                 return data
             })
+            return request(0)
         },
         applyFullList(list) {
             if (!list?.length) return

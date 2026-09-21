@@ -106,12 +106,43 @@ button, input, select, textarea {
 }
 
 :root {
-    --el-color-primary: #1890ff;
-    --el-color-primary-dark-2: #1064c0;
-    --el-color-primary-light-3: #4dabff;
-    --el-color-primary-light-5: #69c0ff;
-    --el-color-primary-light-7: #91d5ff;
-    --el-color-primary-light-9: #e6f7ff;
+    --el-color-primary: #1a7bff;
+    --el-color-primary-dark-2: #0f5fd0;
+    --el-color-primary-light-3: #5c9cff;
+    --el-color-primary-light-5: #82b4ff;
+    --el-color-primary-light-7: #add0ff;
+    --el-color-primary-light-9: #e6f1ff;
+    --el-color-primary-light-8: #c9ddff;
+
+    --el-border-radius-base: 10px;
+    --el-border-radius-small: 8px;
+    --el-font-size-base: 13px;
+
+    /* —— iOS 液态玻璃设计令牌 —— */
+    --radius-xl: 22px;
+    --radius-lg: 18px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
+
+    --glass-blur: 30px;
+    --glass-saturate: 170%;
+    --glass-bg: rgba(255, 255, 255, 0.46);
+    --glass-bg-strong: rgba(255, 255, 255, 0.6);
+    --glass-bg-soft: rgba(255, 255, 255, 0.34);
+    --glass-border: rgba(255, 255, 255, 0.42);
+    --glass-border-strong: rgba(255, 255, 255, 0.6);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    --glass-shadow: 0 24px 60px -24px rgba(30, 55, 110, 0.35), 0 4px 18px -8px rgba(30, 55, 110, 0.12);
+    --glass-shadow-soft: 0 12px 36px -18px rgba(30, 55, 110, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+
+    /* —— 明亮氛围底色（玻璃背后的光） —— */
+    --ambient-1: #7ec3ff;
+    --ambient-2: #9d8bff;
+    --ambient-3: #ffb7d5;
+    --ambient-4: #7fe0c8;
+
+    --aside-text: #3a4460;
+    --aside-text-active: #ffffff;
 
     --extra-light-fill: #FAFCFF;
     --settings-page-background: #fafbfc;
@@ -146,6 +177,25 @@ button, input, select, textarea {
 }
 
 .dark {
+    --el-color-primary-light-8: #3a4a6b;
+
+    --glass-bg: rgba(24, 28, 40, 0.46);
+    --glass-bg-strong: rgba(26, 30, 44, 0.6);
+    --glass-bg-soft: rgba(24, 28, 40, 0.34);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-border-strong: rgba(255, 255, 255, 0.16);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 24px 60px -26px rgba(0, 0, 0, 0.75), 0 4px 18px -8px rgba(0, 0, 0, 0.5);
+    --glass-shadow-soft: 0 12px 36px -20px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+    --ambient-1: #203f8f;
+    --ambient-2: #4c2a8f;
+    --ambient-3: #8f2a54;
+    --ambient-4: #1f5f70;
+
+    --aside-text: #c6cbd9;
+    --aside-text-active: #ffffff;
+
     --extra-light-fill: #191919;
     --settings-page-background: var(--extra-light-fill);
     --light-ill: #262727;
@@ -215,4 +265,88 @@ html[data-theme-to="light"]::view-transition-old(root) {
 @keyframes vt-radial-out {
     from { clip-path: circle(var(--vt-end-radius, 0px) at var(--vt-x) var(--vt-y)); }
     to   { clip-path: circle(0px at var(--vt-x) var(--vt-y)); }
+}
+
+/* ================= 液态玻璃通用基底 ================= */
+/* 全屏淡彩氛围背景（玻璃背后流动的光） */
+.ambient {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background:
+        radial-gradient(60% 70% at 12% 18%, var(--ambient-1), transparent 62%),
+        radial-gradient(55% 65% at 88% 20%, var(--ambient-2), transparent 60%),
+        radial-gradient(50% 60% at 78% 88%, var(--ambient-3), transparent 60%),
+        radial-gradient(45% 55% at 16% 86%, var(--ambient-4), transparent 58%),
+        var(--el-bg-color);
+    filter: saturate(1.1);
+}
+
+.ambient::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(120% 120% at 50% 0%, transparent 30%, rgba(255, 255, 255, 0.18) 100%);
+}
+
+/* 玻璃面板通用工具 */
+.glass-surface {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+}
+
+/* 浮层玻璃（popover / dropdown / dialog） */
+.glass-pop {
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: var(--glass-shadow);
+}
+
+/* Element Plus 圆角与玻璃浮层统一 */
+.el-dialog,
+.el-popover,
+.el-dropdown-menu,
+.el-select__popper,
+.el-picker__popper {
+    border-radius: var(--radius-md) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: var(--glass-shadow) !important;
+}
+
+.el-dropdown-menu,
+.el-popover {
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.el-dialog {
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.el-card {
+    border-radius: var(--radius-md) !important;
+    border-color: var(--glass-border) !important;
+    box-shadow: var(--glass-shadow-soft) !important;
+}
+
+.el-button {
+    transition: all 0.2s ease;
+}
+
+.el-table {
+    --el-table-border-color: var(--glass-border);
+    --el-table-header-bg-color: var(--glass-bg-soft);
+}
+.el-table th.el-table__cell {
+    background: var(--glass-bg-soft);
 }

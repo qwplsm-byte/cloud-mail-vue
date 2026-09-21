@@ -359,9 +359,22 @@ function formatName(email) {
   text-align: right;
   font-size: 12px;
   display: grid;
-  height: 100%;
-  gap: 10px;
+  height: calc(100% - 12px);
+  gap: 12px;
   grid-template-columns: auto auto 1fr;
+  align-items: center;
+  padding: 0 10px;
+  margin: 6px 14px 6px 14px;
+  border-radius: var(--radius-md);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), 0 10px 30px -18px rgba(30, 55, 110, 0.4);
+  @media (max-width: 767px) {
+    margin: 6px 8px;
+    height: calc(100% - 12px);
+  }
 }
 
 .header.not-send {
@@ -420,17 +433,19 @@ function formatName(email) {
 
   .icon-item {
     align-self: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 4px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    transition: all 0.2s ease;
   }
 
   .icon-item:hover {
-    background: var(--base-fill);
+    background: var(--glass-bg-strong);
+    box-shadow: var(--glass-highlight);
   }
 
   .notice {

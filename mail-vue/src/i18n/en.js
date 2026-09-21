@@ -1,5 +1,6 @@
 const en = {
     inbox: 'Inbox',
+    mailbox: 'Mailbox',
     drafts: 'Drafts',
     sent: 'Sent',
     starred: 'Starred',
