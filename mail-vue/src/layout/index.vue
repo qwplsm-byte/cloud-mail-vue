@@ -5,7 +5,7 @@
     <el-aside
         class="aside"
         :class="uiStore.asideShow ? 'aside-show' : 'el-aside-hide'">
-      <Aside />
+      <Aside :collapse="collapse" />
     </el-aside>
     <div
         :class="(uiStore.asideShow && isMobile)? 'overlay-show':'overlay-hide'"
@@ -27,7 +27,7 @@
 import Aside from '@/layout/aside/index.vue'
 import Header from '@/layout/header/index.vue'
 import Main from '@/layout/main/index.vue'
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import {useUiStore} from "@/store/ui.js";
 import writer from '@/layout/write/index.vue'
 
@@ -38,6 +38,9 @@ const handleResize = () => {
   isMobile.value = window.innerWidth < 1025
   uiStore.asideShow = window.innerWidth > 1024;
 }
+
+/* 桌面端：侧边栏折叠为图标栏（移动端为抽屉，不参与折叠） */
+const collapse = computed(() => !isMobile.value && !uiStore.asideShow)
 
 onMounted(() => {
   uiStore.writerRef = writerRef
@@ -52,53 +55,37 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
-.el-aside-hide {
-  position: fixed;
-  left: 0;
-  height: 100%;
-  z-index: 100;
-  transform: translateX(-100%);
-  transition: all 100ms ease;
+.el-aside.el-aside-hide {
+  width: 60px; /* 桌面端折叠为图标栏，而非整体隐藏 */
 }
 
-.aside-show {
+.el-aside.aside-show {
+  width: 248px;
   -webkit-box-shadow: var(--aside-right-border);
   box-shadow: var(--aside-right-border);
-  transform: translateX(0);
-  transition: all 100ms ease;
-  z-index: 101;
-  @media (max-width: 1025px) {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 101;
-    height: 100%;
-    background: var(--glass-bg-strong);
-    -webkit-backdrop-filter: blur(30px) saturate(170%);
-    backdrop-filter: blur(30px) saturate(170%);
-  }
 }
 
 .el-aside {
-  width: auto;
-  transition: all 100ms ease;
+  position: relative;
+  z-index: 102;
+  flex: none;
   border: 0;
   background: transparent;
   box-shadow: none;
+  transition: width .32s cubic-bezier(.25, .8, .3, 1);
 }
 
 .layout {
-  height: 100%;
-  position: fixed;
+  height: 100vh;
   width: 100%;
-  top: 0;
-  left: 0;
+  display: flex;
   overflow: hidden;
+  position: relative;
 }
 
 /* 玻璃背后的淡彩氛围光 */
 .ambient {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -112,7 +99,7 @@ onBeforeUnmount(() => {
 }
 
 .layout-skin {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 1;
   pointer-events: none;
@@ -120,8 +107,9 @@ onBeforeUnmount(() => {
 }
 
 .main-container {
-  position: absolute;
-  inset: 0;
+  flex: 1;
+  min-width: 0;
+  position: relative;
   z-index: 2;
   min-height: 100%;
   background: transparent;
@@ -131,6 +119,7 @@ onBeforeUnmount(() => {
 
 .el-main {
   padding: 0;
+  height: 100%;
 }
 
 .el-header {
@@ -157,5 +146,26 @@ onBeforeUnmount(() => {
   display: flex;
   pointer-events: none;
   opacity: 0;
+}
+
+/* 移动端：侧边栏改为覆盖抽屉 */
+@media (max-width: 1025px) {
+  .el-aside, .el-aside.aside-show, .el-aside.el-aside-hide {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+  }
+  .el-aside.aside-show {
+    width: min(284px, 84vw);
+    transform: translateX(0);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: blur(30px) saturate(170%);
+    backdrop-filter: blur(30px) saturate(170%);
+  }
+  .el-aside.el-aside-hide {
+    width: min(284px, 84vw);
+    transform: translateX(-104%);
+  }
 }
 </style>

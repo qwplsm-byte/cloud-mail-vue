@@ -1,5 +1,5 @@
 <template>
-  <div class="aside-shell">
+  <div class="aside-shell" :class="collapse ? 'collapsed' : ''">
     <div class="brand" @click="router.push({name: 'email'})">
       <span class="brand-badge"><Icon icon="mdi:email-outline" :width="20" :height="20" /></span>
       <div class="brand-name">{{settingStore.settings.title}}</div>
@@ -7,7 +7,7 @@
 
     <el-scrollbar class="scrollbar">
       <el-menu
-          :collapse="false"
+          :collapse="collapse"
           :default-openeds="['mail', 'manage']"
           class="glass-menu"
           text-color="var(--aside-text)"
@@ -99,6 +99,10 @@ import { useRoute } from "vue-router";
 import {Icon} from "@iconify/vue";
 import {useSettingStore} from "@/store/setting.js";
 
+defineProps({
+  collapse: { type: Boolean, default: false },
+});
+
 const settingStore = useSettingStore();
 const route = useRoute();
 </script>
@@ -108,13 +112,31 @@ const route = useRoute();
   display: flex;
   flex-direction: column;
   height: 100%;
-  width: 248px;
+  width: 100%;
+  max-width: 248px;
   padding: 16px 12px 14px;
   background: var(--glass-bg-soft);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
   backdrop-filter: blur(30px) saturate(180%);
   border-right: 1px solid var(--glass-border);
   box-shadow: var(--glass-highlight), 6px 0 30px -22px rgba(30, 55, 110, 0.4);
+  transition: max-width .32s cubic-bezier(.25, .8, .3, 1), padding .32s cubic-bezier(.25, .8, .3, 1);
+}
+
+/* 桌面端折叠为图标栏 */
+.aside-shell.collapsed {
+  max-width: 60px;
+  padding: 16px 0 14px;
+  border-right: 1px solid var(--glass-border);
+
+  .brand {
+    justify-content: center;
+    padding: 0;
+    gap: 0;
+  }
+  .brand-name {
+    display: none;
+  }
 }
 
 .brand {
@@ -160,6 +182,16 @@ const route = useRoute();
 .glass-menu {
   background: transparent;
   border-right: 0;
+  /* 折叠态：让图标栏占满、无多余内边距 */
+  :deep(.el-menu--collapse) {
+    width: 100%;
+    border-right: 0;
+  }
+  :deep(.el-menu--collapse .el-menu-item),
+  :deep(.el-menu--collapse .el-sub-menu__title) {
+    padding: 0 !important;
+    margin: 3px 0;
+  }
   /* 层级修正 */
   :deep(.el-menu),
   :deep(.el-sub-menu .el-menu) {
