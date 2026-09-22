@@ -112,6 +112,8 @@ const route = useRoute();
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
   width: 100%;
   max-width: 248px;
   padding: 16px 12px 14px;
@@ -136,6 +138,15 @@ const route = useRoute();
   }
   .brand-name {
     display: none;
+  }
+
+  /* 折叠态：底部"个人设置"只显示图标并居中 */
+  .aside-footer .menu-name {
+    display: none;
+  }
+  .aside-footer :deep(.el-menu-item) {
+    justify-content: center;
+    padding: 0 !important;
   }
 }
 

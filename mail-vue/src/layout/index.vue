@@ -69,6 +69,8 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 102;
   flex: none;
+  height: 100%;
+  min-height: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
