@@ -82,13 +82,14 @@
       </el-menu>
     </el-scrollbar>
 
-    <!-- 个人设置：常驻底部 -->
+    <!-- 个人设置：常驻底部（原生元素，确保一定渲染） -->
     <div class="aside-footer">
-      <el-menu-item @click="router.push({name: 'setting'})" index="setting"
-                    :class="route.meta.name === 'setting' ? 'is-active' : ''">
+      <div class="profile-item" role="button" tabindex="0"
+           :class="route.meta.name === 'setting' ? 'is-active' : ''"
+           @click="router.push({name: 'setting'})">
         <Icon icon="fluent:settings-48-regular" :width="19" :height="19" />
         <span class="menu-name">{{$t('settings')}}</span>
-      </el-menu-item>
+      </div>
     </div>
   </div>
 </template>
@@ -144,9 +145,9 @@ const route = useRoute();
   .aside-footer .menu-name {
     display: none;
   }
-  .aside-footer :deep(.el-menu-item) {
+  .aside-footer .profile-item {
     justify-content: center;
-    padding: 0 !important;
+    padding: 0;
   }
 }
 
@@ -257,20 +258,25 @@ const route = useRoute();
   padding-top: 12px;
   border-top: 1px solid var(--glass-border);
 
-  :deep(.el-menu-item) {
+  .profile-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     height: 40px;
-    line-height: 40px;
     margin: 3px 0;
+    padding: 0 12px;
     border-radius: 12px;
-    padding: 0 12px !important;
     color: var(--aside-text);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.18s ease, color 0.18s ease;
   }
 
-  :deep(.el-menu-item:hover) {
+  .profile-item:hover {
     background: rgba(255, 255, 255, 0.5);
   }
 
-  :deep(.el-menu-item.is-active) {
+  .profile-item.is-active {
     background: linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9));
     color: #fff !important;
     box-shadow: 0 10px 24px -10px rgba(45, 100, 255, 0.6);
