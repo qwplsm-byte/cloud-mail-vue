@@ -23,8 +23,8 @@
                 class="write-select"
                 popper-class="write-select"
                 :show-arrow="false"
-                :no-match-text="' '"
-                :no-data-text="' '"
+                :no-match-text="' ' "
+                :no-data-text="' ' "
                 @visible-change="selectStatusChange"
                 @change="selectChange"
             >
@@ -623,6 +623,7 @@ function close() {
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
