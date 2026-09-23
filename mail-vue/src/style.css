@@ -76,6 +76,29 @@ button, input, select, textarea {
     color: var(--el-text-color-primary) !important;
 }
 
+/* 邮箱输入框的 @域名 后缀区域：禁止被 flex 压缩裁切，始终完整显示 */
+.el-input-group {
+    flex-wrap: nowrap;
+}
+
+.el-input__wrapper {
+    min-width: 0;
+    flex: 1;
+}
+
+.el-input-group__append, .el-input-group__prepend {
+    flex: none !important;
+    flex-shrink: 0 !important;
+    max-width: none;
+    white-space: nowrap;
+    overflow: visible;
+}
+
+.el-input-group__append span,
+.el-input-group__append div {
+    white-space: nowrap;
+}
+
 .tox .tox-dialog__iframe.tox-dialog__iframe--opaque {
     background-color: var(--el-bg-color) !important;
 }
