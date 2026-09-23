@@ -548,6 +548,10 @@ path[fill="#ffdda1"] {
     .add {
       margin-left: 2px;
     }
+
+    .head-opt:not(.add) .refresh {
+      margin-left: 5px;
+    }
   }
 
   .scrollbar {
@@ -696,3 +700,5 @@ path[fill="#ffdda1"] {
   pointer-events: none;
   position: fixed;
 }
+
+</style>
