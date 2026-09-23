@@ -76,26 +76,31 @@ button, input, select, textarea {
     color: var(--el-text-color-primary) !important;
 }
 
-/* 邮箱输入框的 @域名 后缀区域：禁止被 flex 压缩裁切，始终完整显示 */
+/* —— 修复"添加邮箱"弹窗：@域名 后缀被接续裁切、需手动滑动的问题 ——
+   Element Plus 的 .el-input-group 默认是 inline-table(table 布局)，
+   flex 相关属性对它无效，导致后缀无法按自然宽度展示。
+   改为 flex 后：输入框占满剩余宽度，@域名 后缀保持完整不被压缩。 */
 .el-input-group {
-    flex-wrap: nowrap;
+    display: flex;
+    align-items: stretch;
 }
 
-.el-input__wrapper {
+.el-input-group .el-input__wrapper {
+    flex: 1 1 auto;
     min-width: 0;
-    flex: 1;
 }
 
-.el-input-group__append, .el-input-group__prepend {
-    flex: none !important;
-    flex-shrink: 0 !important;
+.el-input-group__append,
+.el-input-group__prepend {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
     max-width: none;
     white-space: nowrap;
-    overflow: visible;
 }
 
-.el-input-group__append span,
-.el-input-group__append div {
+.el-input-group__append div,
+.el-input-group__append span {
     white-space: nowrap;
 }
 
