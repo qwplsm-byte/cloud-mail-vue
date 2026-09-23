@@ -1291,6 +1291,26 @@ function adjustWidth() {
   padding: 0 !important;
   padding-left: 8px !important;
   background: var(--el-bg-color);
+  flex: none;
+  flex-shrink: 0;
+  width: auto;
+  max-width: none;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+:deep(.el-input-group) {
+  flex-wrap: nowrap;
+}
+
+:deep(.el-input__wrapper) {
+  min-width: 0;
+  flex: 1;
+}
+
+:deep(.el-input-group__append span),
+:deep(.el-input-group__append div) {
+  white-space: nowrap;
 }
 
 :deep(.cell) {
