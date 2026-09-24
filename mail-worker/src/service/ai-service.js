@@ -95,6 +95,14 @@ const aiService = {
 
 		let data;
 
+		const contentType = response.headers.get('content-type') || '';
+
+		//返回网页(HTML)说明接口地址填错了, 通常是缺少 /v1
+		if (!contentType.includes('json')) {
+			const text = await response.text();
+			throw new Error(`AI 接口返回的不是 JSON (url=${url}, content-type=${contentType}): ${text.slice(0, 120)} —— 请检查接口地址是否缺少 /v1`);
+		}
+
 		try {
 			data = await response.json();
 		} catch (e) {
