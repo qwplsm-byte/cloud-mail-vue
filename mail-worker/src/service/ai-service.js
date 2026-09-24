@@ -43,7 +43,7 @@ const aiService = {
 
 			return this.parseCode(content);
 		} catch (e) {
-			console.error('验证码提取失败: ', e);
+			console.error(`验证码提取失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'} | cause: ${e?.cause?.message || e?.cause || '-'} | ${e?.stack || ''}`);
 			return '';
 		}
 	},
@@ -59,32 +59,62 @@ const aiService = {
 	},
 
 	async chatWithExternalAI(options, messages, maxTokens = 32) {
-		const baseUrl = (options.aiBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+		let baseUrl = (options.aiBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '');
+		//接口地址漏写协议时自动补全, 避免 fetch 直接抛错
+		if (!/^https?:\/\//i.test(baseUrl)) {
+			baseUrl = `https://${baseUrl}`;
+		}
 
-		const response = await fetch(`${baseUrl}/chat/completions`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${options.aiApiKey}`
-			},
-			body: JSON.stringify({
-				model: options.aiModel || 'gpt-4o-mini',
-				messages,
-				temperature: 0,
-				max_tokens: maxTokens
-			})
-		});
+		const model = options.aiModel || 'gpt-4o-mini';
+		const url = `${baseUrl}/chat/completions`;
+
+		let response;
+
+		try {
+			response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${options.aiApiKey}`
+				},
+				body: JSON.stringify({
+					model,
+					messages,
+					temperature: 0,
+					max_tokens: maxTokens
+				})
+			});
+		} catch (e) {
+			throw new Error(this.describeFetchError(e, url, model));
+		}
 
 		if (!response.ok) {
 			const text = await response.text();
-			throw new Error(`AI API error ${response.status}: ${text.slice(0, 200)}`);
+			throw new Error(`AI 接口返回 ${response.status} (url=${url}, model=${model}): ${text.slice(0, 200)}`);
 		}
 
-		const data = await response.json();
+		let data;
+
+		try {
+			data = await response.json();
+		} catch (e) {
+			throw new Error(`AI 接口返回非 JSON (url=${url}): ${e?.message || e}`);
+		}
 		const choice = data?.choices?.[0];
 		const message = choice?.message || {};
 		//兼容推理型模型：content 为空时回退 reasoning_content
 		return (message.content || message.reasoning_content || choice?.text || '').trim();
+	},
+
+	describeFetchError(e, url, model) {
+		const name = e?.name || 'Error';
+		const message = e?.message || '(empty)';
+		const cause = e?.cause?.message || e?.cause || '';
+		const code = e?.cause?.code || e?.code || '';
+
+		return `请求 AI 接口失败 url=${url} model=${model} name=${name} message=${message}`
+			+ (cause ? ` cause=${cause}` : '')
+			+ (code ? ` code=${code}` : '');
 	},
 
 	parseCode(content) {
@@ -163,7 +193,7 @@ const aiService = {
 
 			return category;
 		} catch (e) {
-			console.error('邮件分类失败: ', e);
+			console.error(`邮件分类失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'} | cause: ${e?.cause?.message || e?.cause || '-'} | ${e?.stack || ''}`);
 			return emailConst.category.NONE;
 		}
 	},
