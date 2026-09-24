@@ -81,7 +81,10 @@ const aiService = {
 		}
 
 		const data = await response.json();
-		return data?.choices?.[0]?.message?.content || '';
+		const choice = data?.choices?.[0];
+		const message = choice?.message || {};
+		//兼容推理型模型：content 为空时回退 reasoning_content
+		return (message.content || message.reasoning_content || choice?.text || '').trim();
 	},
 
 	parseCode(content) {
@@ -149,10 +152,16 @@ const aiService = {
 			];
 
 			const content = options.aiApiKey
-				? await this.chatWithExternalAI(options, messages, 4)
-				: await this.chatWithWorkersAI(c, messages, 4);
+				? await this.chatWithExternalAI(options, messages, 16)
+				: await this.chatWithWorkersAI(c, messages, 16);
 
-			return this.parseCategory(content);
+			const category = this.parseCategory(content);
+
+			if (category === emailConst.category.NONE) {
+				console.warn('邮件分类未识别到分类编号, 模型返回: ', JSON.stringify(content).slice(0, 200));
+			}
+
+			return category;
 		} catch (e) {
 			console.error('邮件分类失败: ', e);
 			return emailConst.category.NONE;
@@ -164,9 +173,11 @@ const aiService = {
 			return emailConst.category.NONE;
 		}
 
-		const match = String(content).match(/[1-5]/);
+		const str = String(content).trim();
+		//优先匹配独立出现的分类编号，避免从推理文本/长句中误取数字
+		const match = str.match(/(?:^|\D)([1-5])(?!\d)/) || str.match(/[1-5]/);
 
-		return match ? Number(match[0]) : emailConst.category.NONE;
+		return match ? Number(match[1] || match[0]) : emailConst.category.NONE;
 	},
 
 	shouldExtractCode(aiCode, aiCodeFilterStr, email) {
