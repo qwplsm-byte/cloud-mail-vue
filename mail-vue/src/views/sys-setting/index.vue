@@ -418,6 +418,15 @@
                   </el-button>
                 </div>
               </div>
+              <div class="setting-item">
+                <div><span>{{ $t('aiApiSetting') }}</span></div>
+                <div class="forward">
+                  <span>{{ setting.aiApiKey ? $t('aiKeyConfigured') : $t('aiKeyNotConfigured') }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openAiSetting">
+                    <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
+                  </el-button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -927,13 +936,46 @@ Authorization: &lt;secret&gt;</pre>
         </el-form>
         <el-button type="primary" style="width: 100%;" :loading="settingLoading" @click="saveAiCodeFilter">{{ $t('save') }}</el-button>
       </el-dialog>
+      <el-dialog v-model="aiSettingShow" class="forward-dialog" @closed="resetAiSetting">
+        <template #header>
+          <div class="forward-head">
+            <span class="forward-set-title">{{ $t('aiApiSetting') }}</span>
+            <el-tooltip effect="dark" :content="$t('aiApiSettingDesc')">
+              <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+            </el-tooltip>
+          </div>
+        </template>
+        <el-form label-position="top">
+          <el-form-item :label="t('aiBaseUrl')">
+            <el-input v-model="aiSettingForm.aiBaseUrl" :placeholder="t('aiBaseUrlDesc')" clearable/>
+          </el-form-item>
+          <el-form-item :label="t('aiModel')">
+            <el-input v-model="aiSettingForm.aiModel" :placeholder="t('aiModelDesc')" clearable/>
+          </el-form-item>
+          <el-form-item :label="t('aiApiKey')">
+            <el-input v-model="aiSettingForm.aiApiKey" type="password" show-password :placeholder="t('aiApiKeyDesc')"
+                      clearable/>
+          </el-form-item>
+        </el-form>
+        <div style="display: flex; gap: 10px;">
+          <el-button v-if="setting.aiApiKey" style="flex: 1; margin-left: 0;" :loading="aiClearLoading"
+                     @click="clearAiKey">{{ $t('clearAiKey') }}
+          </el-button>
+          <el-button style="flex: 1; margin-left: 0;" :loading="aiTestLoading" @click="testAi">
+            {{ $t('testConnection') }}
+          </el-button>
+          <el-button type="primary" style="flex: 1; margin-left: 0;" :loading="settingLoading" @click="saveAiSetting">
+            {{ $t('save') }}
+          </el-button>
+        </div>
+      </el-dialog>
     </el-scrollbar>
   </div>
 </template>
 
 <script setup>
 import {computed, defineOptions, nextTick, reactive, ref} from "vue";
-import {deleteBackground, setBackground, setBlackList, settingQuery, settingSet} from "@/request/setting.js";
+import {deleteBackground, setBackground, setBlackList, settingQuery, settingSet, testAiConnection} from "@/request/setting.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
@@ -968,6 +1010,7 @@ const resendTokenFormShow = ref(false)
 const blackFormShow = ref(false)
 const autoCleanShow = ref(false)
 const aiCodeFilterShow = ref(false)
+const aiSettingShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
 const tgSettingShow = ref(false)
@@ -1054,6 +1097,14 @@ const blackListForm = ref({
 })
 const aiCodeFilter = ref([])
 
+const aiSettingForm = reactive({
+  aiBaseUrl: '',
+  aiModel: '',
+  aiApiKey: ''
+})
+const aiTestLoading = ref(false)
+const aiClearLoading = ref(false)
+
 const authRefreshOptions = computed(() => [
   {label: t('disable'), value: 0},
   {label: '3s', value: 3},
@@ -1121,6 +1172,7 @@ function getSettings() {
     resetEmailPrefix()
     resetBlackList()
     resetAiCodeFilter()
+    resetAiSetting()
     nextTick(() => {
       settingReady.value = true
     })
@@ -1455,6 +1507,12 @@ function resetAiCodeFilter() {
   aiCodeFilter.value = setting.value.aiCodeFilter ? setting.value.aiCodeFilter.split(',') : []
 }
 
+function resetAiSetting() {
+  aiSettingForm.aiBaseUrl = setting.value.aiBaseUrl || ''
+  aiSettingForm.aiModel = setting.value.aiModel || ''
+  aiSettingForm.aiApiKey = ''
+}
+
 function saveEmailPrefix() {
   const form = {}
   form.minEmailPrefix = minEmailPrefix.value
@@ -1656,6 +1714,56 @@ function openAiCodeFilter() {
   aiCodeFilterShow.value = true
 }
 
+function openAiSetting() {
+  resetAiSetting()
+  aiSettingShow.value = true
+}
+
+function testAi() {
+  if (aiTestLoading.value) return
+  aiTestLoading.value = true
+  testAiConnection({
+    aiBaseUrl: aiSettingForm.aiBaseUrl,
+    aiModel: aiSettingForm.aiModel,
+    aiApiKey: aiSettingForm.aiApiKey
+  }).then(res => {
+    if (res && res.success) {
+      ElMessage({message: t('connectSuccess'), type: 'success', plain: true})
+    } else {
+      ElMessage({message: `${t('connectFail')}: ${res?.message || ''}`, type: 'error', plain: true, duration: 5000})
+    }
+  }).finally(() => {
+    aiTestLoading.value = false
+  })
+}
+
+function saveAiSetting() {
+  const form = {
+    aiBaseUrl: aiSettingForm.aiBaseUrl,
+    aiModel: aiSettingForm.aiModel
+  }
+  // 仅在填写了新 Key 时提交，避免用掩码覆盖已保存的 Key
+  if (aiSettingForm.aiApiKey) {
+    form.aiApiKey = aiSettingForm.aiApiKey
+  }
+  editSetting(form)
+}
+
+function clearAiKey() {
+  ElMessageBox.confirm(t('clearAiKeyConfirm'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    aiClearLoading.value = true
+    aiSettingForm.aiApiKey = ''
+    editSetting({aiApiKey: ''})
+  }).catch(() => {
+  }).finally(() => {
+    aiClearLoading.value = false
+  })
+}
+
 function saveResendToken() {
   const settingForm = {
     resendTokens: {}
@@ -1692,6 +1800,7 @@ function change(e) {
   delete settingForm.s3SecretKey
   delete settingForm.tgBotToken
   delete settingForm.resendTokens
+  delete settingForm.aiApiKey
   editSetting(settingForm, false)
 }
 
@@ -1745,6 +1854,7 @@ function editSetting(settingForm, refreshStatus = true) {
     aiCodeFilterShow.value = false
     autoCleanShow.value = false
     oauthSettingShow.value = false
+    aiSettingShow.value = false
   }).catch((e) => {
     loginOpacity.value = setting.value.loginOpacity
     setting.value = {...setting.value, ...JSON.parse(backup)}
