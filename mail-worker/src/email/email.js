@@ -35,7 +35,10 @@ export async function email(message, env, ctx) {
 			blackContent,
 			blackFrom,
 			aiCode,
-			aiCodeFilter
+			aiCodeFilter,
+			aiBaseUrl,
+			aiApiKey,
+			aiModel
 		} = await settingService.query({ env });
 
 		if (receive === settingConst.receive.CLOSE) {
@@ -104,7 +107,7 @@ export async function email(message, env, ctx) {
 		}
 
 		const toName = email.to.find(item => item.address === message.to)?.name || '';
-		const code = await aiService.extractCode({ env }, email, { aiCode, aiCodeFilter });
+		const code = await aiService.extractCode({ env }, email, { aiCode, aiCodeFilter, aiBaseUrl, aiApiKey, aiModel });
 
 		const params = {
 			toEmail: message.to,
