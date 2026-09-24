@@ -192,16 +192,23 @@ const settingService = {
 	async testAi(c, params = {}) {
 		const settingData = await this.query(c);
 
-		const baseUrl = (params.aiBaseUrl || settingData.aiBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+		let baseUrl = (params.aiBaseUrl || settingData.aiBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '');
 		const apiKey = params.aiApiKey || settingData.aiApiKey;
 		const model = params.aiModel || settingData.aiModel || 'gpt-4o-mini';
+
+		//接口地址漏写协议时自动补全
+		if (!/^https?:\/\//i.test(baseUrl)) {
+			baseUrl = `https://${baseUrl}`;
+		}
 
 		if (!apiKey) {
 			return { success: false, message: 'API Key 未配置' };
 		}
 
+		const url = `${baseUrl}/chat/completions`;
+
 		try {
-			const response = await fetch(`${baseUrl}/chat/completions`, {
+			const response = await fetch(url, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -221,7 +228,10 @@ const settingService = {
 
 			return { success: true, message: 'ok' };
 		} catch (e) {
-			return { success: false, message: e.message };
+			const detail = `请求失败 url=${url} model=${model} name=${e?.name || 'Error'} message=${e?.message || '(empty)'}`
+				+ (e?.cause?.message || e?.cause ? ` cause=${e?.cause?.message || e?.cause}` : '');
+
+			return { success: false, message: detail };
 		}
 	},
 
