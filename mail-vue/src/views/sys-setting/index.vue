@@ -132,6 +132,64 @@
                   </div>
                 </div>
               </div>
+              <div class="setting-item personalized">
+                <div>
+                  <span>{{ $t('layoutBackground') }}</span>
+                  <el-tooltip effect="dark" :content="$t('layoutBackgroundDesc')">
+                    <Icon class="warning" icon="fe:warning" width="16" height="16"/>
+                  </el-tooltip>
+                </div>
+                <div>
+                  <video
+                      v-if="layoutIsVideo"
+                      class="background"
+                      :src="cvtR2Url(setting.layoutBackground)"
+                      autoplay
+                      muted
+                      loop
+                      playsinline
+                  ></video>
+                  <el-image
+                      v-else
+                      class="background"
+                      :src="cvtR2Url(setting.layoutBackground)"
+                      :preview-src-list="[cvtR2Url(setting.layoutBackground)]"
+                      show-progress
+                      fit="cover"
+                  >
+                    <template #error>
+                      <div class="error-image">
+                        <Icon icon="ph:image" width="24" height="24"/>
+                      </div>
+                    </template>
+                  </el-image>
+                  <div class="background-btn">
+                    <el-button class="opt-button" size="small" type="primary" @click="openSetLayoutBackground">
+                      <Icon icon="lsicon:edit-outline" width="16" height="16"/>
+                    </el-button>
+                    <el-button class="opt-button" size="small" type="primary" @click="delLayoutBackground">
+                      <Icon icon="material-symbols:delete-outline-rounded" width="16" height="16"/>
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('layoutBackgroundMask') }}</span>
+                  <el-tooltip effect="dark" :content="$t('layoutBackgroundMaskDesc')">
+                    <Icon class="warning" icon="fe:warning" width="16" height="16"/>
+                  </el-tooltip>
+                </div>
+                <div class="mask-slider">
+                  <el-slider
+                      v-model="setting.layoutBackgroundMask"
+                      :min="0"
+                      :max="100"
+                      :step="5"
+                      @change="changeField('layoutBackgroundMask', $event)"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -603,6 +661,56 @@
         </div>
       </el-dialog>
       <el-dialog
+          v-model="showSetLayoutBackground"
+          class="cut-dialog"
+          @closed="closedSetLayoutBackground"
+      >
+        <template #header>
+          <span style="font-size: 18px">
+            {{ $t('layoutBackground') }}
+            <el-tooltip>
+              <template #content>
+                <span>{{ $t('layoutBackgroundWarning') }}</span>
+              </template>
+              <Icon class="title-icon  warning" icon="fe:warning" width="18" height="18"/>
+            </el-tooltip>
+          </span>
+        </template>
+        <el-input
+            :placeholder="$t('layoutBackgroundUrlDesc')"
+            v-model="layoutBackgroundUrl"
+            v-if="!layoutLocalUpShow"
+            class="background-url"
+            @keyup.enter="saveLayoutBackground"
+        />
+        <video
+            v-if="layoutLocalUpShow && layoutLocalVideo"
+            class="cropper"
+            :src="layoutBackgroundPreview"
+            autoplay
+            muted
+            loop
+            playsinline
+        ></video>
+        <el-image
+            v-else-if="layoutLocalUpShow"
+            :preview-src-list="[layoutBackgroundPreview]"
+            show-progress
+            class="cropper"
+            fit="cover"
+            :src="layoutBackgroundPreview"
+        ></el-image>
+        <div class="cut-button">
+          <el-button type="primary" link @click="openLayoutCut" v-if="!layoutLocalUpShow">
+            {{ $t('localUpload') }}
+          </el-button>
+          <el-button type="primary" link @click="layoutLocalUpShow = false" v-if="layoutLocalUpShow">
+            {{ $t('mediaLink') }}
+          </el-button>
+          <el-button type="primary" :loading="settingLoading" @click="saveLayoutBackground">{{ $t('save') }}</el-button>
+        </div>
+      </el-dialog>
+      <el-dialog
           v-model="tgSettingShow"
           class="forward-dialog"
       >
@@ -987,7 +1095,7 @@ Authorization: &lt;secret&gt;</pre>
 
 <script setup>
 import {computed, defineOptions, nextTick, reactive, ref} from "vue";
-import {deleteBackground, setBackground, setBlackList, settingQuery, settingSet, testAiConnection} from "@/request/setting.js";
+import {deleteBackground, deleteLayoutBackground, setBackground, setBlackList, setLayoutBackground, settingQuery, settingSet, testAiConnection} from "@/request/setting.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
@@ -1047,6 +1155,13 @@ const autoCleanExclude = ref([])
 const backgroundUrl = ref('')
 let backgroundFile = {}
 const showSetBackground = ref(false)
+const layoutBackgroundUrl = ref('')
+const layoutBackgroundPreview = ref('')
+const layoutLocalUpShow = ref(false)
+const layoutLocalVideo = ref(false)
+let layoutLocalFile = {}
+const showSetLayoutBackground = ref(false)
+const layoutIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v)$/i.test(setting.value.layoutBackground || ''))
 let regVerifyCount = ref(1)
 let addVerifyCount = ref(1)
 let backup = '{}'
@@ -1709,6 +1824,86 @@ function openCut() {
   }
 }
 
+function openSetLayoutBackground() {
+  showSetLayoutBackground.value = true
+}
+
+function closedSetLayoutBackground() {
+  layoutBackgroundPreview.value = ''
+  layoutLocalUpShow.value = false
+  layoutLocalVideo.value = false
+  layoutBackgroundUrl.value = setting.value.layoutBackground?.startsWith('http') ? setting.value.layoutBackground : ''
+}
+
+function openLayoutCut() {
+  const doc = document.createElement('input')
+  doc.setAttribute('type', 'file')
+  doc.setAttribute('accept', 'image/*,video/*')
+  doc.click()
+  doc.onchange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    layoutLocalFile = file
+    layoutLocalVideo.value = file.type.startsWith('video/')
+    layoutBackgroundPreview.value = URL.createObjectURL(file)
+    layoutLocalUpShow.value = true
+  }
+}
+
+async function saveLayoutBackground() {
+
+  if (settingLoading.value) return
+
+  let media = ''
+
+  if (layoutLocalUpShow.value) {
+    media = await fileToBase64(layoutLocalFile, true);
+  } else {
+    if (layoutBackgroundUrl.value && !layoutBackgroundUrl.value.startsWith('http')) {
+      ElMessage({
+        message: t('mediaLinkErrorMsg'),
+        type: "error",
+        plain: true
+      })
+      return
+    }
+    media = layoutBackgroundUrl.value
+  }
+
+  settingLoading.value = true
+
+  setLayoutBackground(media).then(key => {
+    setting.value.layoutBackground = key
+    showSetLayoutBackground.value = false
+    ElMessage({
+      message: t('saveSuccessMsg'),
+      type: "success",
+      plain: true
+    })
+  }).finally(() => {
+    settingLoading.value = false
+  })
+
+}
+
+function delLayoutBackground() {
+  ElMessageBox.confirm(t('delLayoutBackgroundConfirm'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    deleteLayoutBackground().then(() => {
+      layoutBackgroundUrl.value = ''
+      setting.value.layoutBackground = null
+      ElMessage({
+        message: t('delSuccessMsg'),
+        type: "success",
+        plain: true
+      })
+    })
+  })
+}
+
 function saveR2domain() {
   const settingForm = {r2Domain: r2DomainInput.value}
   editSetting(settingForm)
@@ -2101,6 +2296,14 @@ function editSetting(settingForm, refreshStatus = true) {
 
 .background-url {
   width: min(calc(100vw - 70px), 500px);
+}
+
+.mask-slider {
+  width: 160px;
+}
+
+video.background {
+  object-fit: cover;
 }
 
 

@@ -20,6 +20,14 @@ export function deleteBackground() {
     return http.delete('/setting/deleteBackground')
 }
 
+export function setLayoutBackground(layoutBackground) {
+    return http.put('/setting/setLayoutBackground',{layoutBackground})
+}
+
+export function deleteLayoutBackground() {
+    return http.delete('/setting/deleteLayoutBackground')
+}
+
 export function setBlackList(params) {
     return http.put('/setting/setBlacklist', params)
 }

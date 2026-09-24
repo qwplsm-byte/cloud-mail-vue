@@ -181,6 +181,45 @@ const settingService = {
 		return background;
 	},
 
+	async deleteLayoutBackground(c) {
+
+		const { layoutBackground } = await this.query(c);
+		if (!layoutBackground) return
+
+		if (!layoutBackground.startsWith('http')) {
+			await r2Service.delete(c, layoutBackground)
+		}
+
+		await orm(c).update(setting).set({ layoutBackground: '' }).run();
+		await this.refresh(c)
+	},
+
+	//主界面背景: 支持图片/动图/视频, 外链直接存, 本地文件转存对象存储
+	async setLayoutBackground(c, params) {
+
+		let { layoutBackground } = params
+
+		await this.deleteLayoutBackground(c);
+
+		if (layoutBackground && !layoutBackground.startsWith('http')) {
+
+			const file = fileUtils.base64ToFile(layoutBackground)
+
+			const arrayBuffer = await file.arrayBuffer();
+			layoutBackground = constant.LAYOUT_BACKGROUND_PREFIX + await fileUtils.getBuffHash(arrayBuffer) + fileUtils.getExtFileName(file.name);
+
+			await r2Service.putObj(c, layoutBackground, arrayBuffer, {
+				contentType: file.type,
+				cacheControl: `public, max-age=31536000, immutable`,
+				contentDisposition: `inline; filename="${file.name}"`
+			});
+
+		}
+
+		await orm(c).update(setting).set({ layoutBackground }).run();
+		await this.refresh(c);
+		return layoutBackground;
+	},
 
 	async setBlacklist(c, params) {
 		const { blackSubject, blackContent, blackFrom  } = params
@@ -260,6 +299,8 @@ const settingService = {
 			r2Domain: settingRow.r2Domain,
 			siteKey: settingRow.siteKey,
 			background: settingRow.background,
+			layoutBackground: settingRow.layoutBackground,
+			layoutBackgroundMask: settingRow.layoutBackgroundMask,
 			loginOpacity: settingRow.loginOpacity,
 			domainList: settingRow.loginDomain === 1 && !token ? [] : settingRow.domainList,
 			regKey: settingRow.regKey,

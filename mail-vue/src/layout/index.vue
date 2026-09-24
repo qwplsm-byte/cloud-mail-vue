@@ -1,6 +1,23 @@
 <template>
   <div class="layout">
-    <div class="ambient"></div>
+    <div v-if="wallpaper" class="wallpaper">
+      <video
+          v-if="wallpaperIsVideo"
+          class="wallpaper-media"
+          :src="wallpaper"
+          autoplay
+          muted
+          loop
+          playsinline
+      ></video>
+      <div
+          v-else
+          class="wallpaper-media wallpaper-image"
+          :style="{ backgroundImage: `url('${wallpaper}')` }"
+      ></div>
+      <div class="wallpaper-mask" :style="{ opacity: maskOpacity }"></div>
+    </div>
+    <div class="ambient" :class="{ 'ambient-hide': wallpaper }"></div>
     <div class="layout-skin"></div>
     <el-aside
         class="aside"
@@ -29,9 +46,28 @@ import Header from '@/layout/header/index.vue'
 import Main from '@/layout/main/index.vue'
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import {useUiStore} from "@/store/ui.js";
+import {useSettingStore} from "@/store/setting.js";
+import {cvtR2Url} from "@/utils/convert.js";
 import writer from '@/layout/write/index.vue'
 
 const uiStore = useUiStore();
+const settingStore = useSettingStore();
+
+/* 主界面壁纸：图片/动图走背景图，视频用 video 标签静音循环播放 */
+const wallpaperIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v)$/i.test(settingStore.settings.layoutBackground || ''))
+
+const wallpaper = computed(() => {
+  const key = settingStore.settings.layoutBackground
+  if (!key) return ''
+  const url = cvtR2Url(key)
+  if (!url || url === 'https://') return ''
+  return url.startsWith('http') ? url : '/' + url.replace(/^\/+/, '')
+})
+
+const maskOpacity = computed(() => {
+  const value = Number(settingStore.settings.layoutBackgroundMask)
+  return (Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 45) / 100
+})
 const writerRef = ref({})
 const isMobile = ref(window.innerWidth < 1025)
 const handleResize = () => {
@@ -83,6 +119,40 @@ onBeforeUnmount(() => {
   display: flex;
   overflow: hidden;
   position: relative;
+}
+
+/* 主界面壁纸：图片/GIF 用背景图，视频用 <video>，上层压一层可调透明度的遮罩保证可读性 */
+.wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.wallpaper-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wallpaper-image {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.wallpaper-mask {
+  position: absolute;
+  inset: 0;
+  background: var(--el-bg-color);
+}
+
+/* 有壁纸时隐藏氛围光，避免和壁纸叠在一起发花 */
+.ambient.ambient-hide {
+  display: none;
 }
 
 /* 玻璃背后的淡彩氛围光 */

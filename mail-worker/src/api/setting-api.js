@@ -28,6 +28,16 @@ app.delete('/setting/deleteBackground', async (c) => {
 	return c.json(result.ok());
 });
 
+app.put('/setting/setLayoutBackground', async (c) => {
+	const key = await settingService.setLayoutBackground(c, await c.req.json());
+	return c.json(result.ok(key));
+});
+
+app.delete('/setting/deleteLayoutBackground', async (c) => {
+	await settingService.deleteLayoutBackground(c);
+	return c.json(result.ok());
+});
+
 app.put('/setting/setBlacklist', async (c) => {
 	const setting = await settingService.setBlacklist(c, await c.req.json());
 	return c.json(result.ok(setting));
