@@ -33,3 +33,7 @@ app.put('/setting/setBlacklist', async (c) => {
 	return c.json(result.ok(setting));
 })
 
+app.post('/setting/testAi', async (c) => {
+	const data = await settingService.testAi(c, await c.req.json());
+	return c.json(result.ok(data));
+})
