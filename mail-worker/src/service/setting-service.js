@@ -87,6 +87,7 @@ const settingService = {
 		settingRow.s3AccessKey = settingRow.s3AccessKey ? `${settingRow.s3AccessKey.slice(0, 12)}******` : null;
 		settingRow.s3SecretKey = settingRow.s3SecretKey ? `${settingRow.s3SecretKey.slice(0, 12)}******` : null;
 		settingRow.tgBotToken = settingRow.tgBotToken ? `${settingRow.tgBotToken.slice(0, 20)}******` : null;
+		settingRow.aiApiKey = settingRow.aiApiKey ? `${settingRow.aiApiKey.slice(0, 6)}******` : null;
 		settingRow.hasR2 = !!c.env.r2
 		settingRow.hasCfEmail = !!c.env.email
 
@@ -186,6 +187,42 @@ const settingService = {
 		await orm(c).update(setting).set({ blackSubject, blackContent, blackFrom }).run();
 		await this.refresh(c);
 		return this.get(c);
+	},
+
+	async testAi(c, params = {}) {
+		const settingData = await this.query(c);
+
+		const baseUrl = (params.aiBaseUrl || settingData.aiBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+		const apiKey = params.aiApiKey || settingData.aiApiKey;
+		const model = params.aiModel || settingData.aiModel || 'gpt-4o-mini';
+
+		if (!apiKey) {
+			return { success: false, message: 'API Key 未配置' };
+		}
+
+		try {
+			const response = await fetch(`${baseUrl}/chat/completions`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${apiKey}`
+				},
+				body: JSON.stringify({
+					model,
+					messages: [{ role: 'user', content: 'ping' }],
+					max_tokens: 1
+				})
+			});
+
+			if (!response.ok) {
+				const text = await response.text();
+				return { success: false, message: `${response.status} ${text}`.slice(0, 300) };
+			}
+
+			return { success: true, message: 'ok' };
+		} catch (e) {
+			return { success: false, message: e.message };
+		}
 	},
 
 	async websiteConfig(c) {
