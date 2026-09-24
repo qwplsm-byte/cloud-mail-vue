@@ -10,13 +10,18 @@ export const useUiStore = defineStore('ui', {
         changePreview: 0,
         previewData: {},
         key: 0,
-        dark: false,
+        theme: 'light',
+        androidDark: false,
         asideCount: {
             email: 0,
             send: 0,
             sysEmail: 0
         }
     }),
+    getters: {
+        // 保留旧的布尔语义, 编辑器/图表/登录页等消费方无需改动
+        dark: (state) => state.theme === 'dark' || (state.theme === 'android' && state.androidDark),
+    },
     actions: {
         showNotice() {
             this.changeNotice ++
@@ -27,6 +32,6 @@ export const useUiStore = defineStore('ui', {
         }
     },
     persist: {
-        pick: ['accountShow','dark'],
+        pick: ['accountShow','theme','androidDark'],
     },
 })

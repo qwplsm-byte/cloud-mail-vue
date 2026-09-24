@@ -10,12 +10,39 @@
       </div>
     </div>
     <div class="toolbar">
-      <div v-if="uiStore.dark" class="sun-icon icon-item" @click="openDark($event)">
-        <Icon icon="mingcute:sun-fill"/>
-      </div>
-      <div v-else class="dark-icon icon-item" @click="openDark($event)">
-        <Icon icon="solar:moon-linear"/>
-      </div>
+      <el-popover
+          ref="themePopoverRef"
+          placement="bottom-end"
+          trigger="click"
+          :width="208"
+          popper-class="theme-popover">
+        <template #reference>
+          <div class="icon-item theme-icon">
+            <Icon :icon="currentThemeIcon"/>
+          </div>
+        </template>
+        <div class="theme-options">
+          <div class="theme-options-title">{{ $t('theme') }}</div>
+          <div
+              v-for="item in themeOptions"
+              :key="item.value"
+              class="theme-option"
+              :class="{ 'theme-option-active': uiStore.theme === item.value }"
+              @click="selectTheme(item.value, $event)">
+            <Icon class="theme-option-icon" :icon="item.icon" width="20" height="20"/>
+            <div class="theme-option-text">
+              <div class="theme-option-label">{{ $t(item.label) }}</div>
+              <div v-if="item.desc" class="theme-option-desc">{{ $t(item.desc) }}</div>
+            </div>
+            <Icon
+                v-if="uiStore.theme === item.value"
+                class="theme-option-check"
+                icon="mingcute:check-circle-fill"
+                width="18"
+                height="18"/>
+          </div>
+        </div>
+      </el-popover>
       <div class="notice icon-item" @click="openNotice">
         <Icon icon="streamline-plump:announcement-megaphone"/>
       </div>
@@ -85,6 +112,13 @@ import {useSettingStore} from "@/store/setting.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
 import {setExtend} from "@/utils/day.js"
+import {
+  THEME_ANDROID,
+  THEME_DARK,
+  THEME_LIGHT,
+  isDarkTheme,
+  refreshTheme
+} from "@/theme/index.js"
 
 const {t} = useI18n();
 const route = useRoute();
@@ -94,6 +128,18 @@ const uiStore = useUiStore();
 const logoutLoading = ref(false)
 const userInfoShow = ref(false)
 const userinfoRef = ref({})
+const themePopoverRef = ref(null)
+
+const themeOptions = [
+  {value: THEME_LIGHT, icon: 'solar:sun-2-bold', label: 'themeLight'},
+  {value: THEME_DARK, icon: 'solar:moon-bold', label: 'themeDark'},
+  {value: THEME_ANDROID, icon: 'solar:smartphone-2-bold', label: 'themeAndroid', desc: 'themeAndroidDesc'}
+]
+
+const currentThemeIcon = computed(() => {
+  const current = themeOptions.find(item => item.value === uiStore.theme)
+  return current ? current.icon : themeOptions[0].icon
+})
 
 const accountCount = computed(() => {
   return userStore.user.role.accountCount
@@ -191,13 +237,29 @@ function openNotice() {
   uiStore.showNotice()
 }
 
-function openDark(e) {
+function selectTheme(theme, e) {
 
-  const nextIsDark = !uiStore.dark
+  if (themePopoverRef.value) {
+    themePopoverRef.value.hide()
+  }
+
+  if (uiStore.theme === theme) {
+    return
+  }
+
   const root = document.documentElement
 
+  // android 的浅深由壁纸明暗决定, 这里先用缓存值预判过渡方向
+  const nextIsDark = isDarkTheme(theme, uiStore.androidDark)
+
+  const applyChange = () => {
+    uiStore.theme = theme
+    // refreshTheme 会写入 class、令牌与 theme-color
+    return refreshTheme()
+  }
+
   if (!document.startViewTransition) {
-    switchDark(nextIsDark, root);
+    applyChange()
     return
   }
 
@@ -214,22 +276,12 @@ function openDark(e) {
   root.style.setProperty('--vt-y', `${y}px`)
   root.style.setProperty('--vt-end-radius', `${endRadius + 10}px`)
 
-  const transition = document.startViewTransition(() => {
-    switchDark(nextIsDark, root);
-  })
+  const transition = document.startViewTransition(applyChange)
 
   transition.finished.finally(() => {
     // 清理标记
     root.removeAttribute('data-theme-to')
   })
-}
-
-function switchDark(nextIsDark, root) {
-  root.setAttribute('class', nextIsDark ? 'dark' : '')
-  const metaTag = document.getElementById('theme-color-meta');
-  const isMobile =  !window.matchMedia("(pointer: fine) and (hover: hover)").matches;
-  metaTag.setAttribute('content', nextIsDark ? (isMobile ? '#141414' : '#000000') : (isMobile ? '#191A23' : '#F1F1F1'));
-  uiStore.dark = nextIsDark
 }
 
 function openSend() {
@@ -258,6 +310,76 @@ function formatName(email) {
 <style>
 .detail-dropdown {
   color: var(--el-text-color-primary) !important;
+}
+
+/* 主题选择弹层（背景/圆角/阴影已由全局 .el-popover 规则统一） */
+.theme-popover.el-popper {
+  padding: 8px;
+}
+
+.theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-options-title {
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--secondary-text-color);
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--el-text-color-primary);
+  transition: background 0.18s ease;
+}
+
+.theme-option:hover {
+  background: var(--email-hover-background);
+}
+
+.theme-option-active {
+  background: var(--choose-account-background);
+}
+
+.theme-option-icon {
+  flex: none;
+  color: var(--el-text-color-regular);
+}
+
+.theme-option-active .theme-option-icon {
+  color: var(--el-color-primary);
+}
+
+.theme-option-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-option-label {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.theme-option-desc {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--secondary-text-color);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.theme-option-check {
+  flex: none;
+  color: var(--el-color-primary);
 }
 </style>
 <style lang="scss" scoped>
@@ -453,12 +575,8 @@ function formatName(email) {
     margin-right: 4px;
   }
 
-  .dark-icon {
+  .theme-icon {
     font-size: 20px;
-  }
-
-  .sun-icon {
-    font-size: 24px;
   }
 
   .avatar {

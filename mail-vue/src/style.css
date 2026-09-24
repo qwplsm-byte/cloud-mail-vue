@@ -276,6 +276,23 @@ button, input, select, textarea {
     --el-border-color: #414243 !important;
 }
 
+/* —— Android 类原生主题的结构层 ——
+   颜色令牌由 buildAndroidTokens 注入到 html.android(见 src/theme/index.js),
+   这里只补充 Material 风格更规整的圆角与 color-scheme。 */
+html.android {
+    --radius-xl: 28px;
+    --radius-lg: 24px;
+    --radius-md: 16px;
+    --radius-sm: 12px;
+    --el-border-radius-base: 12px;
+    --el-border-radius-small: 10px;
+    color-scheme: light;
+}
+
+html.android.dark {
+    color-scheme: dark;
+}
+
 .el-input {
     --el-input-text-color: var(--el-text-color-primary) !important;
 }

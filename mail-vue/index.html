@@ -9,17 +9,48 @@
   <link rel="icon" href="/public/mail.png" type="image/png">
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script>
-    const uiStoreStr =  localStorage.getItem('ui')
-    let isDark = false
-    if (uiStoreStr) {
-      const uiStore =  JSON.parse(uiStoreStr)
-      isDark = uiStore.dark
-      const root = document.documentElement
-      root.setAttribute('class', isDark ? 'dark' : '');
-    }
-    const metaTag = document.getElementById('theme-color-meta');
-    const isMobile =  !window.matchMedia("(pointer: fine) and (hover: hover)").matches;
-    metaTag.setAttribute('content', isDark ? (isMobile ? '#141414' : '#000000') : (isMobile ? '#191A23' : '#F1F1F1'));
+    (function () {
+      function readJSON(key) {
+        try {
+          return JSON.parse(localStorage.getItem(key) || 'null')
+        } catch (e) {
+          return null
+        }
+      }
+
+      var ui = readJSON('ui') || {}
+      var theme = ui.theme
+      if (theme !== 'light' && theme !== 'dark' && theme !== 'android') {
+        // 兼容旧版本只存 dark 布尔值的情况
+        theme = ui.dark === true ? 'dark' : 'light'
+      }
+
+      var isDark = theme === 'dark' || (theme === 'android' && ui.androidDark === true)
+      var root = document.documentElement
+      var cls = isDark ? 'dark' : ''
+      if (theme === 'android') {
+        cls = (cls + ' android').trim()
+      }
+      root.setAttribute('class', cls)
+      root.setAttribute('data-theme', theme)
+
+      var metaTag = document.getElementById('theme-color-meta')
+      var isMobile = !window.matchMedia("(pointer: fine) and (hover: hover)").matches
+
+      if (theme === 'android') {
+        // 复用上次生成的令牌样式, 首屏即为 android 配色, 登录后再按当前壁纸重新取色
+        var cache = readJSON('cm-android-theme')
+        if (cache && cache.css) {
+          var styleEl = document.createElement('style')
+          styleEl.id = 'android-theme-tokens'
+          styleEl.textContent = cache.css
+          document.head.appendChild(styleEl)
+        }
+        metaTag.setAttribute('content', (cache && cache.themeColor) || '#F1F1F1')
+      } else {
+        metaTag.setAttribute('content', isDark ? (isMobile ? '#141414' : '#000000') : (isMobile ? '#191A23' : '#F1F1F1'))
+      }
+    })()
   </script>
 </head>
 <style>

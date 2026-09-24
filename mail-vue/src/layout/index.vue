@@ -44,10 +44,11 @@
 import Aside from '@/layout/aside/index.vue'
 import Header from '@/layout/header/index.vue'
 import Main from '@/layout/main/index.vue'
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import {useUiStore} from "@/store/ui.js";
 import {useSettingStore} from "@/store/setting.js";
 import {cvtR2Url} from "@/utils/convert.js";
+import {refreshTheme} from "@/theme/index.js";
 import writer from '@/layout/write/index.vue'
 
 const uiStore = useUiStore();
@@ -77,6 +78,13 @@ const handleResize = () => {
 
 /* 桌面端：侧边栏折叠为图标栏（移动端为抽屉，不参与折叠） */
 const collapse = computed(() => !isMobile.value && !uiStore.asideShow)
+
+/* 主题或主界面壁纸变化时重新取色并应用(android 主题依赖壁纸主色) */
+watch(
+    () => [uiStore.theme, settingStore.settings.layoutBackground],
+    () => { refreshTheme() },
+    {immediate: true}
+)
 
 onMounted(() => {
   uiStore.writerRef = writerRef
