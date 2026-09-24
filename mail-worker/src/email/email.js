@@ -36,6 +36,7 @@ export async function email(message, env, ctx) {
 			blackFrom,
 			aiCode,
 			aiCodeFilter,
+			aiCategory,
 			aiBaseUrl,
 			aiApiKey,
 			aiModel
@@ -160,6 +161,19 @@ export async function email(message, env, ctx) {
 		}
 
 		emailRow = await emailService.completeReceive({ env }, account ? emailConst.status.RECEIVE : emailConst.status.NOONE, emailRow.emailId);
+
+		//后台异步分类，不阻塞收件
+		if (account) {
+			ctx.waitUntil(
+				aiService.classifyEmail({ env }, email, { aiCategory, aiBaseUrl, aiApiKey, aiModel })
+					.then(category => {
+						if (category) {
+							return emailService.updateCategory({ env }, emailRow.emailId, category);
+						}
+					})
+					.catch(e => console.error('邮件分类异常: ', e))
+			);
+		}
 
 
 		if (ruleType === settingConst.ruleType.RULE) {

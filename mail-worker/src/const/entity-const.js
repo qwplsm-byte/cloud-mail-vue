@@ -54,6 +54,14 @@ export const emailConst = {
 	unread: {
 		UNREAD: 0,
 		READ: 1
+	},
+	category: {
+		NONE: 0,
+		ACCOUNT: 1,
+		NOTICE: 2,
+		BILL: 3,
+		PROMOTION: 4,
+		OTHER: 5
 	}
 }
 
@@ -133,6 +141,10 @@ export const settingConst = {
 		CLOSE: 1
 	},
 	aiCode: {
+		OPEN: 0,
+		CLOSE: 1
+	},
+	aiCategory: {
 		OPEN: 0,
 		CLOSE: 1
 	},

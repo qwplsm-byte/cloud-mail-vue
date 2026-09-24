@@ -28,7 +28,7 @@ const emailService = {
 
 	async list(c, params, userId) {
 
-		let { emailId, type, accountId, size, timeSort, allReceive, full } = params;
+		let { emailId, type, accountId, size, timeSort, allReceive, full, category, hasAtt, subject, content, startTime, endTime } = params;
 
 		size = Number(size);
 		type = Number(type);
@@ -37,6 +37,8 @@ const emailService = {
 		accountId = Number(accountId);
 		allReceive = Number(allReceive);
 		full = Number(full);
+		category = Number(category);
+		hasAtt = Number(hasAtt);
 
 		if (isNaN(type)) {
 			type = 0;
@@ -65,8 +67,8 @@ const emailService = {
 			allReceive = accountRow.allReceive;
 		}
 
-		const filters = this.emailListFilters({ userId, accountId, type, allReceive, emailId, timeSort });
-		const countFilters = this.emailListFilters({ userId, accountId, type, allReceive, withCursor: false });
+		const filters = this.emailListFilters({ userId, accountId, type, allReceive, emailId, timeSort, category, hasAtt, subject, content, startTime, endTime });
+		const countFilters = this.emailListFilters({ userId, accountId, type, allReceive, withCursor: false, category, hasAtt, subject, content, startTime, endTime });
 		const columns = full ? emailListColumns : emailBriefColumns;
 
 		const query = orm(c)
@@ -155,7 +157,7 @@ const emailService = {
 		return list;
 	},
 
-	emailListFilters({ userId, accountId, type, allReceive, emailId, timeSort, withCursor = true }) {
+	emailListFilters({ userId, accountId, type, allReceive, emailId, timeSort, withCursor = true, category, hasAtt, subject, content, startTime, endTime }) {
 		const conditions = [
 			eq(email.userId, userId),
 			eq(email.type, type),
@@ -167,6 +169,28 @@ const emailService = {
 		}
 		if (withCursor && emailId) {
 			conditions.push(timeSort ? gt(email.emailId, emailId) : lt(email.emailId, emailId));
+		}
+		if (category > 0) {
+			conditions.push(eq(email.category, category));
+		}
+		if (hasAtt === 1) {
+			conditions.push(sql`EXISTS (SELECT 1 FROM attachments a WHERE a.email_id = ${email.emailId} AND a.type = ${attConst.type.ATT})`);
+		}
+		if (subject) {
+			conditions.push(sql`${email.subject} COLLATE NOCASE LIKE ${'%' + subject + '%'}`);
+		}
+		if (content) {
+			const keyword = '%' + content + '%';
+			conditions.push(or(
+				sql`${email.text} COLLATE NOCASE LIKE ${keyword}`,
+				sql`${email.content} COLLATE NOCASE LIKE ${keyword}`
+			));
+		}
+		if (startTime) {
+			conditions.push(gte(email.createTime, startTime));
+		}
+		if (endTime) {
+			conditions.push(lte(email.createTime, endTime));
 		}
 		return conditions;
 	},
@@ -1021,6 +1045,10 @@ const emailService = {
 			isDel: isDel.NORMAL,
 			status: status
 		}).where(eq(email.emailId, emailId)).returning().get();
+	},
+
+	updateCategory(c, emailId, category) {
+		return orm(c).update(email).set({ category }).where(eq(email.emailId, emailId)).run();
 	},
 
 	async completeReceiveAll(c) {

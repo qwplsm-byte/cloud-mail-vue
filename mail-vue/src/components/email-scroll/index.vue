@@ -27,6 +27,10 @@
       </div>
     </div>
 
+    <div class="filter-bar" v-if="$slots.filter">
+      <slot name="filter"></slot>
+    </div>
+
     <div ref="scroll" class="scroll">
       <UseVirtualList ref="scrollbarRef"
                         @scroll="onScroll"
@@ -899,7 +903,7 @@ function loadData() {
 
 .email-container {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   padding: 0;
   font-size: 14px;
   color: var(--el-text-color-primary);
@@ -907,7 +911,12 @@ function loadData() {
   height: 100%;
 }
 
+.filter-bar {
+  grid-row: 2;
+}
+
 .scroll {
+  grid-row: 3;
   margin: 0;
   height: 100%;
   overflow: hidden;
@@ -1264,6 +1273,7 @@ function loadData() {
 }
 
 .header-actions {
+  grid-row: 1;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;

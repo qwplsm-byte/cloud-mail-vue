@@ -419,6 +419,18 @@
                 </div>
               </div>
               <div class="setting-item">
+                <div>
+                  <span>{{ $t('aiCategory') }}</span>
+                  <el-tooltip effect="dark" :content="$t('aiCategoryDesc')">
+                    <Icon class="warning" icon="fe:warning" width="16" height="16"/>
+                  </el-tooltip>
+                </div>
+                <div>
+                  <el-switch @change="changeField('aiCategory', $event)" :before-change="beforeChange" :active-value="0" :inactive-value="1"
+                             v-model="setting.aiCategory"/>
+                </div>
+              </div>
+              <div class="setting-item">
                 <div><span>{{ $t('aiApiSetting') }}</span></div>
                 <div class="forward">
                   <span>{{ setting.aiApiKey ? $t('aiKeyConfigured') : $t('aiKeyNotConfigured') }}</span>
