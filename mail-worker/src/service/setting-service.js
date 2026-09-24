@@ -226,6 +226,14 @@ const settingService = {
 				return { success: false, message: `${response.status} ${text}`.slice(0, 300) };
 			}
 
+			const contentType = response.headers.get('content-type') || '';
+
+			//只校验 ok 会把"接口地址填成官网首页"误判为成功, 必须确认返回的是 JSON
+			if (!contentType.includes('json')) {
+				const text = await response.text();
+				return { success: false, message: `接口返回的不是 JSON(url=${url}, content-type=${contentType}), 请检查接口地址是否缺少 /v1: ${text.slice(0, 120)}`.slice(0, 400) };
+			}
+
 			return { success: true, message: 'ok' };
 		} catch (e) {
 			const detail = `请求失败 url=${url} model=${model} name=${e?.name || 'Error'} message=${e?.message || '(empty)'}`
