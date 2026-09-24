@@ -1,9 +1,12 @@
 /**
- * 从一张壁纸的主色推导出一整套 Material 风格配色令牌。
+ * 从一张壁纸的主色推导出一整套 Material 3 风格的配色令牌。
  *
- * 这里不引入第三方色彩库: Material 的 tonal palette 本质是"同一色相下按明度分层,
- * 中性色带一点主色染色"。用 HSL 明度分层 + 中性色低饱和染色即可还原这个观感,
- * 同时对前景/背景显式做对比度择优, 保证文字一定可读。
+ * 这里不引入第三方色彩库, 但也不再用 HSL 明度分层近似 —— HSL 的明度在各个色相下
+ * 的视觉亮度并不一致(同一个 l 值, 黄色显得很亮、蓝色显得很暗), 直接分层会让
+ * 整套配色发浊。Material 3 的 tonal palette 本质是 CIELAB 的 L*(tone) 分层:
+ * 固定色相, 用感知亮度定层级, 用色度(chroma)区分"强调色"与"中性表面"。
+ * 因此这里实现一对轻量的 Lab/LCh 转换, 用 L* 作为 tone, 并对超出 sRGB 色域的
+ * 色度做衰减裁剪(保持色相, 只降饱和), 从而得到干净、不发灰的色阶。
  */
 
 // Material 3 的基准种子色(官方默认紫), 取不到色时回退使用
@@ -12,9 +15,20 @@ export const DEFAULT_SEED = '#6750A4'
 // 壁纸饱和度低于该值时视为灰度图, 直接用默认种子, 避免凭空造出一个颜色
 const GRAY_THRESHOLD = 0.08
 
-// 主色饱和度夹取的上下限, 保证取出的颜色既不太灰也不太刺眼
-const CHROMA_MIN = 0.26
-const CHROMA_MAX = 0.85
+// 强调色色度的上下限(LCh 尺度): 低于下限会显得灰, 高于上限在 sRGB 里站不住
+const ACCENT_CHROMA_MIN = 32
+const ACCENT_CHROMA_MAX = 72
+
+// 中性色的色度 —— Material 3 的中性表面只带极淡的染色, 这是"干净高级"的关键
+const NEUTRAL_CHROMA = 4
+const NEUTRAL_VARIANT_CHROMA = 8
+
+// D65 白点
+const WHITE_X = 0.95047
+const WHITE_Y = 1.0
+const WHITE_Z = 1.08883
+
+const DELTA = 6 / 29
 
 function clamp(value, min, max) {
 	return Math.min(Math.max(value, min), max)
@@ -166,8 +180,114 @@ export function isGraySeed(hex) {
 	return rgbToHsl(rgb.r, rgb.g, rgb.b).s < GRAY_THRESHOLD
 }
 
+/* ===================== LCh(ab) <-> sRGB ===================== */
+
+const srgbToLinear = (v) => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+const linearToSrgb = (v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055
+
 /**
- * 生成 android 主题用的一整套 CSS 变量。
+ * sRGB -> LCh(ab)。
+ * @returns {{L: number, C: number, h: number}} L: 0-100, C: 色度, h: 色相角 0-360
+ */
+export function hexToLch(hex) {
+
+	const rgb = hexToRgb(hex)
+
+	if (!rgb) {
+		return {L: 0, C: 0, h: 0}
+	}
+
+	const r = srgbToLinear(rgb.r / 255)
+	const g = srgbToLinear(rgb.g / 255)
+	const b = srgbToLinear(rgb.b / 255)
+
+	const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / WHITE_X
+	const y = (0.2126729 * r + 0.7151522 * g + 0.0721750 * b) / WHITE_Y
+	const z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / WHITE_Z
+
+	const f = (t) => t > DELTA * DELTA * DELTA ? Math.cbrt(t) : t / (3 * DELTA * DELTA) + 4 / 29
+
+	const fx = f(x)
+	const fy = f(y)
+	const fz = f(z)
+
+	const L = 116 * fy - 16
+	const a = 500 * (fx - fy)
+	const bb = 200 * (fy - fz)
+
+	return {
+		L,
+		C: Math.sqrt(a * a + bb * bb),
+		h: ((Math.atan2(bb, a) * 180 / Math.PI) % 360 + 360) % 360
+	}
+}
+
+/**
+ * LCh(ab) -> sRGB。超出 sRGB 色域时返回 null, 由调用方衰减色度重试,
+ * 这样色相保持不变、只降饱和, 不会像直接裁剪通道那样偏色。
+ */
+function lchToHexRaw(L, C, h) {
+
+	const hRad = h * Math.PI / 180
+	const a = C * Math.cos(hRad)
+	const b = C * Math.sin(hRad)
+
+	const fy = (L + 16) / 116
+	const fx = fy + a / 500
+	const fz = fy - b / 200
+
+	const fInv = (t) => t > DELTA ? t * t * t : 3 * DELTA * DELTA * (t - 4 / 29)
+
+	const x = WHITE_X * fInv(fx)
+	const y = WHITE_Y * fInv(fy)
+	const z = WHITE_Z * fInv(fz)
+
+	const r = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z
+	const g = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z
+	const bl = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z
+
+	// 任一线性通道越界即视为超出色域, 交给外层降 chroma
+	if (r < -0.001 || r > 1.001 || g < -0.001 || g > 1.001 || bl < -0.001 || bl > 1.001) {
+		return null
+	}
+
+	return rgbToHex(
+		linearToSrgb(clamp(r, 0, 1)) * 255,
+		linearToSrgb(clamp(g, 0, 1)) * 255,
+		linearToSrgb(clamp(bl, 0, 1)) * 255
+	)
+}
+
+/**
+ * 按 L*(tone) 与色度取一个色相固定的颜色。
+ *
+ * @param {number} L 感知亮度 tone, 0-100
+ * @param {number} C 色度, 0 为纯灰
+ * @param {number} h 色相角 0-360
+ */
+export function toneToHex(L, C, h) {
+
+	let chroma = Math.max(C, 0)
+
+	for (let i = 0; i < 12; i++) {
+		const hex = lchToHexRaw(L, chroma, h)
+		if (hex) {
+			return hex
+		}
+		chroma *= 0.88
+		if (chroma < 0.4) {
+			break
+		}
+	}
+
+	return lchToHexRaw(L, 0, h) || rgbToHex(128, 128, 128)
+}
+
+/**
+ * 生成 android(类原生/Material You) 主题用的一整套 CSS 变量。
+ *
+ * 色阶取自 Material 3 的标准 tone 值, 并额外产出 surfaceContainer 阶梯与
+ * 一组 --android-* 结构令牌, 供 style.css 的纯色扁平结构层使用。
  *
  * @param {string} seedHex 壁纸主色, 灰度色或非法值会自动回退到默认种子
  * @param {boolean} isDark 是否走深色 Material
@@ -178,150 +298,184 @@ export function buildAndroidTokens(seedHex, isDark) {
 	const normalized = normalizeHex(seedHex)
 	const seed = (!normalized || isGraySeed(normalized)) ? DEFAULT_SEED : normalized
 
-	const seedRgb = hexToRgb(seed)
-	const seedHsl = rgbToHsl(seedRgb.r, seedRgb.g, seedRgb.b)
-	const h = seedHsl.h
-	const c = clamp(seedHsl.s, CHROMA_MIN, CHROMA_MAX)
+	const seedLch = hexToLch(seed)
+	const hue = seedLch.h
+	const accent = clamp(seedLch.C, ACCENT_CHROMA_MIN, ACCENT_CHROMA_MAX)
 
-	// 同一色相下按明度分层, 饱和度的用量决定它是"主色"还是"被染色的中性色"
-	const tone = (l, chromaRatio = 1) => hslToHex(h, c * chromaRatio, l)
+	// tone(L, C): 固定色相, 按感知亮度与色度取色
+	const tone = (L, C) => toneToHex(L, C, hue)
+	// 中性色: 只带极淡染色
+	const neutral = (L) => tone(L, NEUTRAL_CHROMA)
+	// 中性变体: 比中性色略多一点的染色, 用于描边/次级容器
+	const variant = (L) => tone(L, NEUTRAL_VARIANT_CHROMA)
 
-	let primary, onPrimary, primaryContainer, onPrimaryContainer
+	let primary, primaryContainer, onPrimaryContainer
 	let secondary, secondaryContainer, onSecondaryContainer
-	let surface, surfacePage, surfaceContainer, onSurface
-	let surfaceVariant, onSurfaceVariant, outline, outlineVariant
+	let surface, surfaceLow, surfaceContainer, surfaceHigh, surfaceHighest, surfaceLowest
+	let onSurface, onSurfaceVariant, outline, outlineVariant
 
 	if (isDark) {
-		primary = tone(0.78, 0.85)
-		primaryContainer = tone(0.30, 0.85)
-		onPrimaryContainer = tone(0.90, 0.42)
-		secondary = tone(0.78, 0.35)
-		secondaryContainer = tone(0.28, 0.35)
-		onSecondaryContainer = tone(0.90, 0.30)
-		surface = tone(0.085, 0.06)
-		surfacePage = tone(0.055, 0.06)
-		surfaceContainer = tone(0.14, 0.07)
-		onSurface = tone(0.90, 0.05)
-		surfaceVariant = tone(0.18, 0.08)
-		onSurfaceVariant = tone(0.78, 0.08)
-		outline = tone(0.58, 0.06)
-		outlineVariant = tone(0.28, 0.08)
+		primary = tone(80, accent)
+		primaryContainer = tone(30, accent * 0.85)
+		onPrimaryContainer = tone(90, accent * 0.45)
+		secondary = tone(80, accent * 0.42)
+		secondaryContainer = tone(30, accent * 0.42)
+		onSecondaryContainer = tone(90, accent * 0.35)
+
+		surfaceLowest = neutral(4)
+		surface = neutral(6)
+		surfaceLow = neutral(10)
+		surfaceContainer = neutral(12)
+		surfaceHigh = neutral(17)
+		surfaceHighest = neutral(22)
+		onSurface = tone(90, NEUTRAL_CHROMA)
+		onSurfaceVariant = variant(80)
+		outline = tone(60, NEUTRAL_CHROMA)
+		outlineVariant = variant(30)
 	} else {
-		primary = tone(0.40)
-		primaryContainer = tone(0.90, 0.5)
-		onPrimaryContainer = tone(0.16)
-		secondary = tone(0.38, 0.45)
-		secondaryContainer = tone(0.90, 0.32)
-		onSecondaryContainer = tone(0.18, 0.6)
-		surface = tone(0.985, 0.06)
-		surfacePage = tone(0.945, 0.08)
-		surfaceContainer = tone(0.965, 0.07)
-		onSurface = tone(0.11, 0.08)
-		surfaceVariant = tone(0.925, 0.10)
-		onSurfaceVariant = tone(0.30, 0.12)
-		outline = tone(0.50, 0.10)
-		outlineVariant = tone(0.80, 0.12)
+		primary = tone(40, accent)
+		primaryContainer = tone(90, accent * 0.42)
+		onPrimaryContainer = tone(10, accent * 0.35)
+		secondary = tone(40, accent * 0.42)
+		secondaryContainer = tone(90, accent * 0.30)
+		onSecondaryContainer = tone(10, accent * 0.35)
+
+		surfaceLowest = neutral(100)
+		surface = neutral(98)
+		surfaceLow = neutral(96)
+		surfaceContainer = neutral(94)
+		surfaceHigh = neutral(92)
+		surfaceHighest = neutral(90)
+		onSurface = tone(10, NEUTRAL_CHROMA)
+		onSurfaceVariant = variant(30)
+		outline = tone(50, NEUTRAL_CHROMA)
+		outlineVariant = variant(80)
 	}
 
-	onPrimary = pickReadable(primary, isDark ? [tone(0.16, 0.9), '#FFFFFF'] : ['#FFFFFF', tone(0.14, 0.9)])
-	onSurface = pickReadable(surface, [onSurface, '#FFFFFF', '#000000'])
+	const onPrimary = pickReadable(primary, isDark ? [tone(20, accent * 0.6), '#000000'] : ['#FFFFFF', tone(100, 0)])
+	const onSecondary = pickReadable(secondary, isDark ? [tone(20, accent * 0.4), '#000000'] : ['#FFFFFF', tone(100, 0)])
+	// 正文字色优先用 tonal 值(tone 10/90), 纯黑/纯白只在对比度不足时才兜底 ——
+	// 直接上 #000 会显得生硬, 不够 Material。
+	const onSurfaceSafe = contrastRatio(surface, onSurface) >= 4.5
+		? onSurface
+		: pickReadable(surface, [onSurface, '#FFFFFF', '#000000'])
 
-	const error = isDark ? '#F2B8B5' : '#B3261E'
+	const error = isDark ? tone(80, 55) : tone(40, 55)
 
-	// Element Plus 需要主色的多档浅色, 用同色相不同明度近似
-	const primaryLight = (l, ratio) => tone(l, ratio)
+	// Element Plus 需要主色的多档变体, 这里直接给同色相的 L* 阶梯, 而不是混白
+	const ramp = (L, ratio) => tone(L, accent * ratio)
 
 	return {
 		/* —— Element Plus 主色阶梯 —— */
 		'--el-color-primary': primary,
-		'--el-color-primary-dark-2': isDark ? tone(0.70, 0.85) : tone(0.30),
-		'--el-color-primary-light-3': isDark ? primaryLight(0.66, 0.8) : primaryLight(0.52, 0.95),
-		'--el-color-primary-light-5': isDark ? primaryLight(0.56, 0.7) : primaryLight(0.62, 0.8),
-		'--el-color-primary-light-7': isDark ? primaryLight(0.40, 0.6) : primaryLight(0.75, 0.6),
+		'--el-color-primary-dark-2': isDark ? ramp(70, 1) : ramp(30, 1),
+		'--el-color-primary-light-3': isDark ? ramp(68, 0.95) : ramp(52, 1),
+		'--el-color-primary-light-5': isDark ? ramp(56, 0.8) : ramp(62, 0.85),
+		'--el-color-primary-light-7': isDark ? ramp(40, 0.6) : ramp(74, 0.6),
 		'--el-color-primary-light-8': primaryContainer,
-		'--el-color-primary-light-9': isDark ? tone(0.17, 0.5) : tone(0.95, 0.4),
+		'--el-color-primary-light-9': isDark ? ramp(20, 0.35) : ramp(94, 0.22),
 
 		/* —— 背景与浮层 —— */
 		'--el-bg-color': surface,
-		'--el-bg-color-page': surfacePage,
-		'--el-bg-color-overlay': surfaceContainer,
+		'--el-bg-color-page': isDark ? surfaceLowest : surfaceLow,
+		'--el-bg-color-overlay': surfaceHigh,
 
 		/* —— 文字 —— */
-		'--el-text-color-primary': onSurface,
+		'--el-text-color-primary': onSurfaceSafe,
 		'--el-text-color-regular': onSurfaceVariant,
 		'--el-text-color-secondary': onSurfaceVariant,
 		'--el-text-color-placeholder': outline,
 		'--el-text-color-disabled': outlineVariant,
 
-		/* —— 边框与填充 —— */
+		/* —— 边框与填充: 类原生靠表面层级区分, 描边只做极淡的分隔 —— */
 		'--el-border-color': outlineVariant,
 		'--el-border-color-light': outlineVariant,
 		'--el-border-color-lighter': outlineVariant,
 		'--el-border-color-extra-light': outlineVariant,
 		'--el-border-color-dark': outline,
 		'--el-border-color-darker': outline,
-		'--el-fill-color': surfaceVariant,
-		'--el-fill-color-light': surfaceVariant,
-		'--el-fill-color-lighter': surfaceVariant,
-		'--el-fill-color-extra-light': surfaceVariant,
-		'--el-fill-color-dark': surfaceContainer,
-		'--el-fill-color-darker': surfaceContainer,
+		'--el-fill-color': surfaceHigh,
+		'--el-fill-color-light': surfaceHigh,
+		'--el-fill-color-lighter': surfaceContainer,
+		'--el-fill-color-extra-light': surfaceContainer,
+		'--el-fill-color-dark': surfaceHighest,
+		'--el-fill-color-darker': surfaceHighest,
 		'--el-fill-color-blank': surface,
-		'--el-mask-color': isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.35)',
-		'--el-mask-color-extra-light': isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.15)',
+		'--el-mask-color': isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.32)',
+		'--el-mask-color-extra-light': isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.12)',
 		'--el-color-error': error,
-		'--el-color-error-light-9': isDark ? '#3a1a17' : '#fdecea',
+		'--el-color-error-light-9': isDark ? tone(20, 40) : tone(94, 20),
 
 		/* —— 侧边栏 —— */
-		'--aside-backgound': surfaceVariant,
+		'--aside-backgound': surfaceLow,
 		'--aside-text': onSurfaceVariant,
-		'--aside-text-active': primary,
-		'--aside-menu-active-background': primaryContainer,
-		'--aside-right-border': `3px 0 5px ${isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.16)'}`,
+		'--aside-text-active': onSecondaryContainer,
+		'--aside-menu-active-background': secondaryContainer,
+		'--aside-right-border': 'none',
 
 		/* —— 应用自定义令牌 —— */
-		'--extra-light-fill': surface,
-		'--settings-page-background': surfacePage,
-		'--light-ill': surfaceVariant,
+		'--extra-light-fill': surfaceLow,
+		'--settings-page-background': isDark ? surfaceLowest : surfaceLow,
+		'--light-ill': surfaceContainer,
 		'--light-border': outlineVariant,
 		'--light-border-color': outlineVariant,
-		'--base-fill': surfaceVariant,
+		'--base-fill': surfaceHigh,
 		'--base-border-color': outlineVariant,
-		'--dark-border': outlineVariant,
+		'--dark-border': outline,
 		'--regular-text-color': onSurfaceVariant,
 		'--secondary-text-color': onSurfaceVariant,
 		'--form-desc-color': onSurfaceVariant,
 		'--scrollbar-track-color': outlineVariant,
 		'--email-scroll-content-color': outline,
-		'--email-hover-background': surfaceVariant,
-		'--email-right-click-background': primaryContainer,
-		'--choose-account-background': primaryContainer,
+		'--email-hover-background': surfaceHigh,
+		'--email-right-click-background': secondaryContainer,
+		'--choose-account-background': secondaryContainer,
 		'--message-block-color': 'rgba(0, 0, 0, 0)',
 		'--login-border': 'none',
 		'--login-switch-color': primary,
-		'--loadding-background': isDark ? hsla(h, c * 0.1, 0.06, 0.8) : hsla(h, c * 0.1, 0.99, 0.8),
+		'--loadding-background': surface,
 		'--header-actions-border': `inset 0 -1px 0 0 ${outlineVariant}`,
 
-		/* —— 玻璃层: Material 更扁平, 提高不透明度、减少模糊 —— */
-		'--glass-blur': '14px',
-		'--glass-saturate': '125%',
-		'--glass-bg': hsla(h, c * 0.12, isDark ? 0.13 : 0.97, 0.82),
-		'--glass-bg-strong': hsla(h, c * 0.12, isDark ? 0.15 : 0.98, 0.94),
-		'--glass-bg-soft': hsla(h, c * 0.12, isDark ? 0.11 : 0.95, 0.7),
+		/* —— 玻璃层令牌: 在 android 下全部塌陷为不透明纯色, 彻底去掉模糊 —— */
+		'--glass-blur': '0px',
+		'--glass-saturate': '100%',
+		'--glass-bg': surfaceLow,
+		'--glass-bg-strong': surfaceContainer,
+		'--glass-bg-soft': surfaceContainer,
 		'--glass-border': outlineVariant,
 		'--glass-border-strong': outline,
-		'--glass-highlight': 'inset 0 1px 0 rgba(255, 255, 255, 0)',
+		'--glass-highlight': 'inset 0 0 0 0 rgba(0, 0, 0, 0)',
 		'--glass-shadow': isDark
-			? '0 8px 24px -12px rgba(0, 0, 0, 0.7)'
-			: '0 8px 24px -14px rgba(0, 0, 0, 0.28)',
+			? '0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px -10px rgba(0, 0, 0, 0.6)'
+			: '0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 20px -12px rgba(0, 0, 0, 0.18)',
 		'--glass-shadow-soft': isDark
-			? '0 4px 14px -8px rgba(0, 0, 0, 0.6)'
-			: '0 4px 14px -8px rgba(0, 0, 0, 0.2)',
+			? '0 1px 2px rgba(0, 0, 0, 0.45)'
+			: '0 1px 2px rgba(0, 0, 0, 0.05)',
 
-		/* —— 氛围光跟随壁纸主色 —— */
-		'--ambient-1': tone(isDark ? 0.30 : 0.78, 0.7),
-		'--ambient-2': secondaryContainer,
-		'--ambient-3': tone(isDark ? 0.26 : 0.82, 0.5),
-		'--ambient-4': secondary
+		/* —— 氛围光: 类原生界面不需要, 直接熄灭 —— */
+		'--ambient-1': 'transparent',
+		'--ambient-2': 'transparent',
+		'--ambient-3': 'transparent',
+		'--ambient-4': 'transparent',
+
+		/* —— 供结构层直接使用的表面阶梯与强调色 —— */
+		'--android-surface': surface,
+		'--android-surface-low': surfaceLow,
+		'--android-surface-container': surfaceContainer,
+		'--android-surface-high': surfaceHigh,
+		'--android-surface-highest': surfaceHighest,
+		'--android-surface-lowest': surfaceLowest,
+		'--android-primary': primary,
+		'--android-on-primary': onPrimary,
+		'--android-primary-container': primaryContainer,
+		'--android-on-primary-container': onPrimaryContainer,
+		'--android-secondary': secondary,
+		'--android-on-secondary': onSecondary,
+		'--android-secondary-container': secondaryContainer,
+		'--android-on-secondary-container': onSecondaryContainer,
+		'--android-on-surface': onSurfaceSafe,
+		'--android-on-surface-variant': onSurfaceVariant,
+		'--android-outline': outline,
+		'--android-outline-variant': outlineVariant
 	}
 }

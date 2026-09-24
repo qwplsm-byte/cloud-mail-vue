@@ -481,21 +481,21 @@ function formatName(email) {
   text-align: right;
   font-size: 12px;
   display: grid;
-  height: calc(100% - 12px);
+  height: var(--header-height, calc(100% - 12px));
   gap: 12px;
   grid-template-columns: auto auto 1fr;
   align-items: center;
   padding: 0 10px;
-  margin: 6px 14px 6px 14px;
-  border-radius: var(--radius-md);
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight), 0 10px 30px -18px rgba(30, 55, 110, 0.4);
+  margin: var(--header-margin, 6px 14px);
+  border-radius: var(--header-radius, var(--radius-md));
+  background: var(--header-bg, var(--glass-bg-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--header-border, var(--glass-border));
+  box-shadow: var(--header-shadow, var(--glass-highlight), 0 10px 30px -18px rgba(30, 55, 110, 0.4));
   @media (max-width: 767px) {
-    margin: 6px 8px;
-    height: calc(100% - 12px);
+    margin: var(--header-margin-mobile, 6px 8px);
+    height: var(--header-height-mobile, calc(100% - 12px));
   }
 }
 
@@ -513,9 +513,9 @@ function formatName(email) {
   .writer {
     width: 34px;
     height: 34px;
-    border-radius: 50%;
-    color: #ffffff;
-    background: linear-gradient(135deg, #1890ff, #3a80dd);
+    border-radius: var(--writer-radius, 50%);
+    color: var(--writer-text, #ffffff);
+    background: var(--writer-bg, linear-gradient(135deg, #1890ff, #3a80dd));
     transition: all 0.3s ease;
     display: flex;
     align-items: center;
@@ -566,7 +566,7 @@ function formatName(email) {
   }
 
   .icon-item:hover {
-    background: var(--glass-bg-strong);
+    background: var(--icon-hover-bg, var(--glass-bg-strong));
     box-shadow: var(--glass-highlight);
   }
 

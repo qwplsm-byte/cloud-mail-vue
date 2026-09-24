@@ -118,11 +118,11 @@ const route = useRoute();
   width: 100%;
   max-width: 248px;
   padding: 16px 12px 14px;
-  background: var(--glass-bg-soft);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  backdrop-filter: blur(30px) saturate(180%);
-  border-right: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight), 6px 0 30px -22px rgba(30, 55, 110, 0.4);
+  background: var(--aside-bg, var(--glass-bg-soft));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-right: 1px solid var(--aside-border, var(--glass-border));
+  box-shadow: var(--aside-shadow, var(--glass-highlight), 6px 0 30px -22px rgba(30, 55, 110, 0.4));
   transition: max-width .32s cubic-bezier(.25, .8, .3, 1), padding .32s cubic-bezier(.25, .8, .3, 1);
 }
 
@@ -130,7 +130,7 @@ const route = useRoute();
 .aside-shell.collapsed {
   max-width: 60px;
   padding: 16px 0 14px;
-  border-right: 1px solid var(--glass-border);
+  border-right: 1px solid var(--aside-border, var(--glass-border));
 
   .brand {
     justify-content: center;
@@ -169,10 +169,10 @@ const route = useRoute();
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--brand-badge-text, #fff);
     border-radius: 12px;
-    background: linear-gradient(135deg, #4c9aff, #7b5cff);
-    box-shadow: 0 8px 20px -8px rgba(74, 130, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    background: var(--brand-badge-bg, linear-gradient(135deg, #4c9aff, #7b5cff));
+    box-shadow: var(--brand-badge-shadow, 0 8px 20px -8px rgba(74, 130, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4));
   }
 
   .brand-name {
@@ -216,7 +216,7 @@ const route = useRoute();
     line-height: 40px;
     margin: 3px 0;
     padding: 0 12px !important;
-    border-radius: 12px;
+    border-radius: var(--menu-item-radius, 12px);
     color: var(--aside-text);
     transition: background 0.18s ease, color 0.18s ease;
   }
@@ -234,7 +234,7 @@ const route = useRoute();
 
   :deep(.el-menu-item:hover),
   :deep(.el-sub-menu__title:hover) {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--menu-hover-bg, rgba(255, 255, 255, 0.5));
   }
 
   :deep(.el-sub-menu__icon-arrow) {
@@ -247,16 +247,16 @@ const route = useRoute();
 
   :deep(.el-menu-item.is-active),
   :deep(.el-menu .el-menu-item.is-active) {
-    background: linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9));
-    color: #fff !important;
-    box-shadow: 0 10px 24px -10px rgba(45, 100, 255, 0.6);
+    background: var(--menu-active-bg, linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9)));
+    color: var(--menu-active-text, #fff) !important;
+    box-shadow: var(--menu-active-shadow, 0 10px 24px -10px rgba(45, 100, 255, 0.6));
   }
 }
 
 .aside-footer {
   margin-top: 10px;
   padding-top: 12px;
-  border-top: 1px solid var(--glass-border);
+  border-top: 1px solid var(--aside-border, var(--glass-border));
 
   .profile-item {
     display: flex;
@@ -265,7 +265,7 @@ const route = useRoute();
     height: 40px;
     margin: 3px 0;
     padding: 0 12px;
-    border-radius: 12px;
+    border-radius: var(--menu-item-radius, 12px);
     color: var(--aside-text);
     cursor: pointer;
     user-select: none;
@@ -273,13 +273,13 @@ const route = useRoute();
   }
 
   .profile-item:hover {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--menu-hover-bg, rgba(255, 255, 255, 0.5));
   }
 
   .profile-item.is-active {
-    background: linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9));
-    color: #fff !important;
-    box-shadow: 0 10px 24px -10px rgba(45, 100, 255, 0.6);
+    background: var(--menu-active-bg, linear-gradient(135deg, rgba(26, 123, 255, 0.9), rgba(91, 96, 255, 0.9)));
+    color: var(--menu-active-text, #fff) !important;
+    box-shadow: var(--menu-active-shadow, 0 10px 24px -10px rgba(45, 100, 255, 0.6));
   }
 }
 

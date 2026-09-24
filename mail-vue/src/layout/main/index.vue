@@ -162,17 +162,17 @@ const handleResize = () => {
 /* 内容舞台：液态玻璃卡片 */
 .glass-stage {
   position: relative;
-  margin: 0 14px 14px;
-  border-radius: var(--radius-lg);
-  background: var(--glass-bg-soft);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid var(--glass-border);
+  margin: var(--stage-margin, 0 14px 14px);
+  border-radius: var(--stage-radius, var(--radius-lg));
+  background: var(--stage-bg, var(--glass-bg-soft));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: var(--stage-border, 1px solid var(--glass-border));
   box-shadow: var(--glass-shadow), var(--glass-highlight);
   overflow: hidden;
   @media (max-width: 767px) {
-    margin: 0 8px 8px;
-    border-radius: var(--radius-md);
+    margin: var(--stage-margin-mobile, 0 8px 8px);
+    border-radius: var(--stage-radius-mobile, var(--radius-md));
   }
 }
 

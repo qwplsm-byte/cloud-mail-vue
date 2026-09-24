@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.12), transparent 40%, rgba(255, 255, 255, 0.04));
+  background: var(--layout-skin, linear-gradient(160deg, rgba(255, 255, 255, 0.12), transparent 40%, rgba(255, 255, 255, 0.04)));
 }
 
 .main-container {
@@ -239,9 +239,9 @@ onBeforeUnmount(() => {
   .el-aside.aside-show {
     width: min(284px, 84vw);
     transform: translateX(0);
-    background: var(--glass-bg-strong);
-    -webkit-backdrop-filter: blur(30px) saturate(170%);
-    backdrop-filter: blur(30px) saturate(170%);
+    background: var(--aside-bg, var(--glass-bg-strong));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   }
   .el-aside.el-aside-hide {
     width: min(284px, 84vw);

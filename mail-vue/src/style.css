@@ -277,8 +277,10 @@ button, input, select, textarea {
 }
 
 /* —— Android 类原生主题的结构层 ——
-   颜色令牌由 buildAndroidTokens 注入到 html.android(见 src/theme/index.js),
-   这里只补充 Material 风格更规整的圆角与 color-scheme。 */
+   颜色令牌由 buildAndroidTokens 注入到 html.android(见 src/theme/index.js)。
+   这里把"结构"也一并原生化: 纯色扁平表面、去掉模糊/彩色光晕/渐变高亮,
+   导航项用 Material 3 的 secondaryContainer 药丸指示, 顶栏做成贴着内容区的
+   app bar(直角 + 底部发丝分隔), 而不是 iOS 那种悬浮玻璃卡片。 */
 html.android {
     --radius-xl: 28px;
     --radius-lg: 24px;
@@ -287,10 +289,59 @@ html.android {
     --el-border-radius-base: 12px;
     --el-border-radius-small: 10px;
     color-scheme: light;
+
+    /* 导航抽屉: 纯色 + 药丸指示器 */
+    --aside-bg: var(--android-surface-low);
+    --aside-border: var(--android-outline-variant);
+    --aside-shadow: none;
+    --menu-item-radius: 999px;
+    --menu-active-bg: var(--android-secondary-container);
+    --menu-active-text: var(--android-on-secondary-container);
+    --menu-active-shadow: none;
+    --menu-hover-bg: color-mix(in srgb, var(--android-on-surface) 8%, transparent);
+
+    /* 品牌标识 */
+    --brand-badge-bg: var(--android-primary-container);
+    --brand-badge-text: var(--android-on-primary-container);
+    --brand-badge-shadow: none;
+
+    /* 顶栏: 贴边 app bar, 圆角归零 + 底部发丝分隔 */
+    --header-bg: var(--android-surface);
+    --header-border: transparent;
+    --header-shadow: inset 0 -1px 0 0 var(--android-outline-variant);
+    --header-radius: 0;
+    --header-margin: 0;
+    --header-margin-mobile: 0;
+    --header-height: 100%;
+    --header-height-mobile: 100%;
+    --icon-hover-bg: color-mix(in srgb, var(--android-on-surface) 8%, transparent);
+
+    /* 写邮件按钮: Material 填充按钮, 不用渐变 */
+    --writer-bg: var(--android-primary);
+    --writer-text: var(--android-on-primary);
+    --writer-radius: 16px;
+
+    /* 内容舞台: 类原生贴边铺满, 不做悬浮玻璃卡片 */
+    --stage-margin: 0;
+    --stage-margin-mobile: 0;
+    --stage-radius: 0;
+    --stage-radius-mobile: 0;
+    --stage-bg: var(--android-surface);
+    --stage-border: 0;
+
+    /* iOS 的白色液态光泽与氛围光在类原生下全部熄灭 */
+    --layout-skin: none;
+    --glass-highlight: inset 0 0 0 0 rgba(0, 0, 0, 0);
 }
 
 html.android.dark {
     color-scheme: dark;
+}
+
+/* 关掉玻璃基底上的白色高光与液态光泽 */
+html.android .layout-skin,
+html.android .ambient::before {
+    display: none;
 }
 
 .el-input {
