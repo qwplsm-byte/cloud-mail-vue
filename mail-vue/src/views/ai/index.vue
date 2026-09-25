@@ -26,7 +26,7 @@
 
           <div class="preset-label">{{ $t('aiPresetTitle') }}</div>
           <div class="preset-grid">
-            <button v-for="preset in presets" :key="preset.key" class="preset-card" @click="usePreset(preset)">
+            <button v-for="preset in presetList" :key="preset.key" class="preset-card" @click="usePreset(preset)">
               <Icon :icon="preset.icon" :width="18" :height="18" />
               <span class="preset-name">{{ $t(preset.label) }}</span>
               <Icon class="preset-arrow" icon="mdi:arrow-top-right" :width="15" :height="15" />
@@ -72,11 +72,11 @@
                         <span class="action-name">{{ $t(actionLabel(action.type)) }}</span>
                         <span v-if="action.category" class="action-tag">{{ categoryName(action.category) }}</span>
                         <span class="action-count" :class="action.count ? '' : 'is-empty'">
-                          {{ action.count ? $t('aiMatchCount', {count: action.count}) : $t('aiNoMatch') }}
+                          {{ countText(action) }}
                         </span>
                       </div>
                       <div v-if="action.description" class="action-desc">{{ action.description }}</div>
-                      <div v-if="action.limited" class="action-hint">{{ $t('aiLimited') }}</div>
+                      <div v-if="action.limited" class="action-hint">{{ limitedText(action) }}</div>
 
                       <div v-if="action.samples && action.samples.length" class="action-samples">
                         <span class="samples-label">{{ $t('aiSamples') }}</span>
@@ -112,9 +112,18 @@
                     <span>{{ $t('aiResultTitle') }}</span>
                   </div>
                   <div v-for="(item, index) in msg.results" :key="index" class="result-item">
-                    <Icon :icon="item.success ? 'mdi:check-circle-outline' : 'mdi:alert-circle-outline'"
-                          :width="15" :height="15" :class="item.success ? 'ok' : 'fail'" />
-                    <span class="result-text">{{ resultText(item) }}</span>
+                    <div class="result-row">
+                      <Icon :icon="item.success ? 'mdi:check-circle-outline' : 'mdi:alert-circle-outline'"
+                            :width="15" :height="15" :class="item.success ? 'ok' : 'fail'" />
+                      <span class="result-text">{{ resultText(item) }}</span>
+                    </div>
+                    <!--新注册用户会带上随机初始密码, 直接列出来方便保存-->
+                    <div v-if="item.created && item.created.length" class="created-list">
+                      <div v-for="row in item.created" :key="row.email" class="created-item">
+                        <span class="created-email">{{ row.email }}</span>
+                        <span v-if="row.password" class="created-pwd">{{ row.password }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </template>
@@ -135,7 +144,7 @@
 </template>
 
 <script setup>
-import {defineOptions, nextTick, onBeforeUnmount, reactive, ref, watch} from "vue";
+import {computed, defineOptions, nextTick, onBeforeUnmount, reactive, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {ElMessage, ElMessageBox} from "element-plus";
 import {aiAssistantExecute, aiAssistantPlan} from "@/request/ai.js";
@@ -230,7 +239,18 @@ const presets = [
   {key: 'promo', icon: 'mdi:tag-remove-outline', label: 'aiPresetDeletePromo', prompt: 'aiPresetDeletePromoPrompt'},
   {key: 'notice', icon: 'mdi:email-open-outline', label: 'aiPresetReadNotice', prompt: 'aiPresetReadNoticePrompt'},
   {key: 'summary', icon: 'mdi:text-box-search-outline', label: 'aiPresetSummary', prompt: 'aiPresetSummaryPrompt'},
+  //这两个要自己填数量, 所以只把模板填进输入框, 不直接提交
+  {key: 'addEmails', icon: 'mdi:email-plus-outline', label: 'aiPresetAddEmails', prompt: 'aiPresetAddEmailsPrompt', fill: true},
+  {key: 'registerUsers', icon: 'mdi:account-multiple-plus-outline', label: 'aiPresetRegisterUsers', prompt: 'aiPresetRegisterUsersPrompt', fill: true, admin: true},
 ]
+
+//注册用户是管理员专属(与后端 user:add 权限一致), 没权限就不显示这个预设
+const isAdmin = computed(() => {
+  const keys = userStore.user?.permKeys || []
+  return keys.includes('*') || keys.includes('user:add')
+})
+
+const presetList = computed(() => presets.filter(item => !item.admin || isAdmin.value))
 
 const CATEGORY_LABEL = {
   1: 'categoryAccount',
@@ -246,6 +266,8 @@ const ACTION_LABEL = {
   markRead: 'aiTypeMarkRead',
   star: 'aiTypeStar',
   autoCategorize: 'aiTypeAutoCategorize',
+  addEmails: 'aiTypeAddEmails',
+  registerUsers: 'aiTypeRegisterUsers',
 }
 
 const ACTION_ICON = {
@@ -254,6 +276,15 @@ const ACTION_ICON = {
   markRead: 'mdi:email-open-outline',
   star: 'mdi:star-outline',
   autoCategorize: 'mdi:auto-fix',
+  addEmails: 'mdi:email-plus-outline',
+  registerUsers: 'mdi:account-multiple-plus-outline',
+}
+
+//这两个是按数量创建账号, 与按邮件封数统计的操作文案不同
+const BULK_TYPES = ['addEmails', 'registerUsers']
+
+function isBulk(type) {
+  return BULK_TYPES.includes(type)
 }
 
 function actionLabel(type) {
@@ -277,7 +308,22 @@ function resultText(item) {
   if (!item.success) {
     return `${name} · ${item.message || t('aiSkipped')}`
   }
+  if (isBulk(item.type)) {
+    return `${name} · ${t('aiCreated', {count: item.count})}`
+  }
   return `${name} · ${t('aiAffected', {count: item.count})}`
+}
+
+function countText(action) {
+  if (isBulk(action.type)) {
+    //批量创建没有"匹配"的概念, 直接显示将要创建的数量
+    return t('aiCreateCount', {count: action.count || 0})
+  }
+  return action.count ? t('aiMatchCount', {count: action.count}) : t('aiNoMatch')
+}
+
+function limitedText(action) {
+  return isBulk(action.type) ? t('aiCreateLimited') : t('aiLimited')
 }
 
 function scrollToBottom() {
@@ -290,6 +336,11 @@ function scrollToBottom() {
 }
 
 function usePreset(preset) {
+  //需要自己填数量的预设只把模板填进输入框, 用户改完数量再发送
+  if (preset.fill) {
+    input.value = t(preset.prompt)
+    return
+  }
   submit(t(preset.prompt))
 }
 
@@ -343,6 +394,8 @@ async function runPlan(msg) {
   const actions = msg.plan.map(action => ({
     type: action.type,
     category: action.category,
+    count: action.count,
+    prefix: action.prefix,
     description: action.description,
     filter: action.filter,
   }))
@@ -827,12 +880,15 @@ function clearConversation() {
   }
 
   .result-item {
-    display: flex;
-    align-items: center;
-    gap: 7px;
     padding: 3px 0;
     font-size: 12.5px;
     color: var(--el-text-color-regular);
+
+    .result-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
 
     .ok {
       color: var(--el-color-success);
@@ -840,6 +896,27 @@ function clearConversation() {
 
     .fail {
       color: var(--el-color-danger);
+    }
+
+    .created-list {
+      margin: 4px 0 2px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .created-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: var(--el-text-color-primary);
+      word-break: break-all;
+    }
+
+    .created-pwd {
+      color: var(--el-color-warning);
     }
   }
 }

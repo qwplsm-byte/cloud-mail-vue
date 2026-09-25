@@ -1,12 +1,18 @@
 import orm from '../entity/orm';
 import email from '../entity/email';
+import account from '../entity/account';
 import { star } from '../entity/star';
 import { attConst, emailConst, isDel, settingConst } from '../const/entity-const';
 import { and, desc, eq, inArray, count, gte, lte, sql } from 'drizzle-orm';
 import emailService from './email-service';
+import accountService from './account-service';
+import userService from './user-service';
+import roleService from './role-service';
 import aiService from './ai-service';
 import settingService from './setting-service';
 import permService from './perm-service';
+import emailUtils from '../utils/email-utils';
+import saltHashUtils from '../utils/crypto-utils';
 import BizError from '../error/biz-error';
 import { t } from '../i18n/i18n';
 import dayjs from 'dayjs';
@@ -26,8 +32,12 @@ const AI_TIMEOUT_MS = 120 * 1000;
 const AI_MAX_TOKENS = 4096;
 //Workers AI 内置小模型的输出上限较低, 给太多会直接报错, 这里做个封顶
 const WORKERS_AI_MAX_TOKENS = 1024;
+//单次批量建号/建邮箱的数量上限, 防止一句话造出几百个账号
+const MAX_BULK_COUNT = 20;
 
-const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize'];
+const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize', 'addEmails', 'registerUsers'];
+//这两个操作按数量批量执行, 不涉及邮件筛选
+const BULK_ACTION_TYPES = ['addEmails', 'registerUsers'];
 
 const CATEGORY_NAME = {
 	[emailConst.category.NONE]: '未分类',
@@ -39,12 +49,14 @@ const CATEGORY_NAME = {
 };
 
 const SYSTEM_PROMPT = `你是一个邮件助手, 负责把用户的自然语言需求转换为对邮件的批量操作计划。
-你只能使用以下 5 种操作类型, 不允许编造其它操作:
+你只能使用以下 7 种操作类型, 不允许编造其它操作:
 1. delete —— 删除邮件
 2. categorize —— 把邮件归入指定分类, 必须同时给出 category
 3. markRead —— 标记为已读
 4. star —— 加星标
 5. autoCategorize —— 让 AI 逐封判断并归类"未分类"的邮件(用户说"整理未分类邮件/把邮件归到合适的分类"时使用)
+6. addEmails —— 为当前账户批量添加新邮箱, 必须给出 count(数量), 可选 prefix(邮箱前缀)
+7. registerUsers —— 批量注册新用户, 必须给出 count(数量), 可选 prefix(邮箱前缀); 仅当当前用户是管理员时才允许使用
 
 分类编号: 0=未分类, 1=账号, 2=通知, 3=账单, 4=推广, 5=其他
 
@@ -57,18 +69,28 @@ filter 字段的所有条件都是可选的, 省略表示不限制:
 - from: 发件人邮箱或域名关键词
 - startTime / endTime: 时间范围, 格式 "YYYY-MM-DD" 或 "YYYY-MM-DD HH:mm:ss"
 
+addEmails / registerUsers 的补充说明:
+- 邮箱地址由系统自动生成, 你不要编造具体地址。用户指定了前缀就用"前缀+序号"(如 test1、test2), 没指定则随机生成; prefix 只允许小写字母、数字和 . _ -
+- count 必须是用户明确说出的数量(正整数), 不要臆造。用户没给数量时不要输出这两个操作, 改为在 reply 里追问要创建多少个。
+- 下面会给出当前用户身份, 普通用户禁止使用 registerUsers, 输出了也会被服务端拒绝。
+
 输出要求:
 - 只输出一个 JSON 对象, 不要输出任何解释文字, 不要使用 markdown 代码块。
 - 如果用户只是想了解或总结邮件, actions 返回空数组, 把答案写在 reply 中。
 - 只使用用户明确提到的条件, 不要臆造筛选条件。
 - 每个 action 都要有简短的 description(中文), 说明这条操作做什么。
 - 涉及删除等不可恢复操作时, reply 中要明确提醒用户确认后再执行。
+- registerUsers 创建的用户会随机生成初始密码, reply 里提醒用户保存执行结果中的密码。
 - reply 使用与用户输入相同的语言。
 
 输出格式:
 {"reply":"给用户的自然语言回复","actions":[{"type":"delete","description":"删除所有推广邮件","filter":{"category":4}}]}
 需要指定分类时:
-{"reply":"...","actions":[{"type":"categorize","category":2,"description":"把通知归类到通知分类","filter":{"category":0}}]}`;
+{"reply":"...","actions":[{"type":"categorize","category":2,"description":"把通知归类到通知分类","filter":{"category":0}}]}
+批量添加邮箱时:
+{"reply":"...","actions":[{"type":"addEmails","count":5,"prefix":"test","description":"为本账户添加 5 个邮箱"}]}
+批量注册用户时(仅管理员):
+{"reply":"...","actions":[{"type":"registerUsers","count":3,"description":"注册 3 个新用户"}]}`;
 
 const aiAgentService = {
 
@@ -86,7 +108,8 @@ const aiAgentService = {
 		}
 
 		const stats = await this.buildStats(c, userId);
-		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}`;
+		const isAdmin = await this.isAdmin(c, userId);
+		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}\n当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers)' : '普通用户(禁止使用 registerUsers)'}`;
 
 		const messages = [
 			{ role: 'system', content: SYSTEM_PROMPT },
@@ -135,6 +158,21 @@ const aiAgentService = {
 					}
 					const data = await this.autoCategorize(c, userId, action.filter, options);
 					results.push({ type: action.type, success: true, count: data.updated, matched: data.matched, description: action.description });
+					continue;
+				}
+
+				if (BULK_ACTION_TYPES.includes(action.type)) {
+					//注册用户是管理员专属, 与 /user/add 一致按 user:add 权限判定
+					if (action.type === 'registerUsers' && !(await this.isAdmin(c, userId))) {
+						results.push({ type: action.type, success: false, message: t('unauthorized') });
+						continue;
+					}
+
+					const created = action.type === 'addEmails'
+						? await this.addEmails(c, userId, action)
+						: await this.registerUsers(c, action);
+
+					results.push({ type: action.type, success: true, count: created.length, created, description: action.description });
 					continue;
 				}
 
@@ -276,6 +314,15 @@ const aiAgentService = {
 				continue;
 			}
 
+			if (BULK_ACTION_TYPES.includes(action.type)) {
+				//批量建号/建邮箱不看邮件, 数量受设置与角色上限约束
+				const max = action.type === 'addEmails' ? await this.addEmailQuota(c, userId) : MAX_BULK_COUNT;
+				const total = Math.min(action.count, max);
+
+				actions.push({ ...action, filter: {}, count: total, limited: total < action.count, samples: [] });
+				continue;
+			}
+
 			const filter = action.type === 'autoCategorize'
 				? { ...action.filter, category: emailConst.category.NONE, type: 'receive' }
 				: action.filter;
@@ -380,6 +427,8 @@ const aiAgentService = {
 		}
 
 		let category = null;
+		let count = null;
+		let prefix = '';
 
 		if (type === 'categorize') {
 			category = Number(action.category);
@@ -389,12 +438,31 @@ const aiAgentService = {
 			}
 		}
 
+		if (BULK_ACTION_TYPES.includes(type)) {
+			count = Number(action.count);
+
+			//没给数量或数量不合法时直接丢弃这条操作, 避免误建
+			if (!Number.isInteger(count) || count < 1) {
+				return null;
+			}
+
+			count = Math.min(count, MAX_BULK_COUNT);
+			prefix = this.normalizePrefix(action.prefix);
+		}
+
 		return {
 			type,
 			category,
+			count,
+			prefix,
 			filter: this.normalizeFilter(action.filter),
 			description: String(action.description || '').slice(0, 200)
 		};
+	},
+
+	//邮箱前缀只保留小写字母、数字与 . _ -
+	normalizePrefix(prefix) {
+		return String(prefix || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 20);
 	},
 
 	normalizeFilter(filter) {
@@ -486,6 +554,164 @@ const aiAgentService = {
 
 		const permKeys = await permService.userPermKeys(c, userId);
 		return permKeys.includes('*') || permKeys.includes('email:delete');
+	},
+
+	//管理员判定: 来自 ADMIN 邮箱或拥有 user:add 权限(与 /user/add 路由的校验一致)
+	async isAdmin(c, userId) {
+		const user = c.get('user');
+
+		if (user?.email && user.email === c.env.admin) {
+			return true;
+		}
+
+		const permKeys = await permService.userPermKeys(c, userId);
+		return permKeys.includes('*') || permKeys.includes('user:add');
+	},
+
+	//按设置开关与角色上限算出本账户还能添加多少个邮箱
+	async addEmailQuota(c, userId) {
+		const { addEmail, manyEmail } = await settingService.query(c);
+
+		if (!(addEmail === settingConst.addEmail.OPEN && manyEmail === settingConst.manyEmail.OPEN)) {
+			return 0;
+		}
+
+		const userRow = await userService.selectById(c, userId);
+
+		if (!userRow) {
+			return 0;
+		}
+
+		//管理员不受角色数量限制
+		if (userRow.email === c.env.admin) {
+			return MAX_BULK_COUNT;
+		}
+
+		const roleRow = await roleService.selectById(c, userRow.type);
+
+		//accountCount 为 0 表示不限制
+		if (!roleRow || !roleRow.accountCount) {
+			return MAX_BULK_COUNT;
+		}
+
+		const used = await accountService.countUserAccount(c, userId);
+		return Math.max(0, Math.min(roleRow.accountCount - used, MAX_BULK_COUNT));
+	},
+
+	//为本账户批量添加邮箱, 地址由系统生成, 逐个插入避免一个失败拖垮整批
+	async addEmails(c, userId, action) {
+		const max = await this.addEmailQuota(c, userId);
+
+		if (!max) {
+			throw new BizError(t('addAccountDisabled'));
+		}
+
+		const emails = await this.genEmails(c, { count: Math.min(action.count, max), prefix: action.prefix, userId });
+		const created = [];
+
+		for (const address of emails) {
+			try {
+				await accountService.insert(c, { userId, email: address, name: emailUtils.getName(address) });
+				created.push({ email: address });
+			} catch (e) {
+				console.error(`AI 助手添加邮箱失败: ${address} | ${e?.message || '(empty)'}`);
+			}
+		}
+
+		if (!created.length) {
+			throw new BizError(t('aiAgentNoAddress'));
+		}
+
+		return created;
+	},
+
+	//批量注册用户(仅管理员), 初始密码随机
+	async registerUsers(c, action) {
+		const emails = await this.genEmails(c, { count: action.count, prefix: action.prefix });
+		const created = [];
+
+		for (const address of emails) {
+			const password = saltHashUtils.genRandomPwd(10);
+
+			try {
+				await userService.add(c, { email: address, password });
+				created.push({ email: address, password });
+			} catch (e) {
+				console.error(`AI 助手注册用户失败: ${address} | ${e?.message || '(empty)'}`);
+			}
+		}
+
+		if (!created.length) {
+			throw new BizError(t('aiAgentNoAddress'));
+		}
+
+		return created;
+	},
+
+	//生成可用邮箱地址: 指定了前缀就"前缀+序号", 否则随机; 自动避开已占用与黑名单前缀
+	async genEmails(c, { count, prefix, userId }) {
+		const { minEmailPrefix, emailPrefixFilter } = await settingService.query(c);
+		const banned = (Array.isArray(emailPrefixFilter) ? emailPrefixFilter : String(emailPrefixFilter || '').split(',')).filter(Boolean);
+		const domain = await this.pickDomain(c, userId);
+
+		if (!domain) {
+			throw new BizError(t('notExistDomain'));
+		}
+
+		const names = [];
+		const seen = new Set();
+
+		for (let i = 0; names.length < count * 2 && i < count * 6; i++) {
+			const name = prefix ? `${prefix}${i + 1}` : this.randomName();
+
+			if (name.length < minEmailPrefix || seen.has(name) || banned.some(item => name.includes(item))) {
+				continue;
+			}
+
+			seen.add(name);
+			names.push(name);
+		}
+
+		if (!names.length) {
+			return [];
+		}
+
+		const candidates = names.map(name => `${name}@${domain}`);
+		const existed = await orm(c).select({ email: account.email }).from(account)
+			.where(inArray(account.email, candidates)).all();
+		const existedSet = new Set(existed.map(row => String(row.email).toLowerCase()));
+
+		return candidates.filter(address => !existedSet.has(address.toLowerCase())).slice(0, count);
+	},
+
+	//选一个角色允许使用的域名, 没配域名权限就用第一个
+	async pickDomain(c, userId) {
+		const domains = Array.isArray(c.env.domain) ? c.env.domain.filter(Boolean) : [];
+
+		if (!domains.length) {
+			return '';
+		}
+
+		const userRow = userId ? await userService.selectById(c, userId) : null;
+		const roleRow = userRow ? await roleService.selectById(c, userRow.type) : null;
+		const avail = String(roleRow?.availDomain || '').split(',').filter(Boolean).map(item => item.toLowerCase());
+
+		if (!avail.length) {
+			return domains[0];
+		}
+
+		return domains.find(item => avail.includes(String(item).toLowerCase())) || '';
+	},
+
+	//随机前缀用字母开头, 避免出现纯数字的邮箱名
+	randomName(length = 8) {
+		const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+		const letters = 'abcdefghijklmnopqrstuvwxyz';
+		const bytes = new Uint8Array(length - 1);
+		crypto.getRandomValues(bytes);
+		const body = Array.from(bytes).map(byte => chars[byte % chars.length]).join('');
+
+		return letters[Math.floor(Math.random() * letters.length)] + body;
 	},
 
 	//配置了第三方 Key 走第三方, 否则走 Cloudflare Workers AI 绑定

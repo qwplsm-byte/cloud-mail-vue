@@ -423,6 +423,10 @@ const en = {
     aiPresetReadNoticePrompt: 'Mark all notice emails as read',
     aiPresetSummary: 'Summarize today',
     aiPresetSummaryPrompt: 'Summarize the important emails I received today',
+    aiPresetAddEmails: 'Add mailboxes to this account',
+    aiPresetAddEmailsPrompt: 'Add 5 mailboxes to my account',
+    aiPresetRegisterUsers: 'Register multiple users',
+    aiPresetRegisterUsersPrompt: 'Register 3 new users',
     aiPlanTitle: 'Operation plan',
     aiMatchCount: '{count} emails matched',
     aiLimited: 'Too many emails — only the latest 500 will be processed',
@@ -444,6 +448,11 @@ const en = {
     aiTypeMarkRead: 'Mark as read',
     aiTypeStar: 'Add star',
     aiTypeAutoCategorize: 'AI auto categorize',
+    aiTypeAddEmails: 'Add mailboxes',
+    aiTypeRegisterUsers: 'Register users',
+    aiCreateCount: 'Create {count}',
+    aiCreated: '{count} created',
+    aiCreateLimited: 'The create limit is reached — only the available amount will be created',
 }
 
 export default en
