@@ -4,11 +4,21 @@ import { emailConst, settingConst } from '../const/entity-const';
 const CODE_SYSTEM_PROMPT = 'You extract verification codes from emails. Return only JSON like {"code":"12345678"} or {"code":""}. The code must be 8 characters or fewer and must not contain spaces. If the code is longer than 8 characters or contains spaces, return {"code":""}. Do not explain.';
 
 const CATEGORY_SYSTEM_PROMPT = 'You classify an email into exactly one category. Reply with the category digit only, nothing else.\n' +
-	'1 = account: verification codes, sign up, login alerts, password reset, security notices\n' +
-	'2 = notice: system or service notifications, order and shipping updates, reminders, support tickets\n' +
-	'3 = bill: invoices, receipts, statements, payment, refund or subscription charges\n' +
-	'4 = promotion: ads, marketing, sales, coupons, newsletters, event invitations\n' +
-	'5 = other: personal messages, social updates, or anything that does not fit above';
+	'1 = account: emails about account access or security — verification/confirmation codes, sign-up or activation, login or sign-in alerts, password reset, two-factor codes, security warnings about an account.\n' +
+	'2 = notice: system or service notifications, order and shipping updates, reminders, support tickets, and account-related notices that contain no code and are not about login or security.\n' +
+	'3 = bill: invoices, receipts, statements, payment, refund or subscription charges.\n' +
+	'4 = promotion: ads, marketing, sales, coupons, newsletters, event invitations.\n' +
+	'5 = other: personal or social messages (greetings, small talk, short informal notes) and anything that does not fit above.\n' +
+	'Rules:\n' +
+	'- Pick 1 only when the email clearly concerns account access or security (a code, sign-up, login, password, 2FA, or a security alert).\n' +
+	'- A short personal greeting or casual note is 5, even if its subject is vague or contains a number.\n' +
+	'- If you are unsure between 1 and 5, choose 5.\n' +
+	'Examples: "Hi, how are you?" -> 5; "你好" -> 5; "Your verification code is 470-096" -> 1; "New sign-in to your account" -> 1; "Your September invoice" -> 3';
+
+//判为"账号"时的确定性兜底特征: 主题/正文/发件人命中任一即保留账号, 否则降级为"其他"。
+//小模型(如 llama-3.1-8b)偶尔会把无关的短邮件判成账号, 这层兜底用于兜住这类抽风。
+const ACCOUNT_HINT_PATTERN = /(验证码|校验码|动态密码|登录|登入|登陆|密码|账号|账户|帐户|安全|激活|注册|验证|verify|verification|validat|\bcode\b|passcode|one[- ]?time|\botp\b|2fa|two[- ]?factor|sign[- ]?in|log[- ]?in|password|\bpin\b|security|activate|activation|confirm|token|account|auth)/i;
+const DIGIT_CODE_PATTERN = /(?:\d[\s-]?){4,}/;
 
 const aiService = {
 	async extractCode(c, email, options = {}) {
@@ -193,10 +203,16 @@ const aiService = {
 				? await this.chatWithExternalAI(options, messages, 16)
 				: await this.chatWithWorkersAI(c, messages, 16);
 
-			const category = this.parseCategory(content);
+			let category = this.parseCategory(content);
 
 			if (category === emailConst.category.NONE) {
 				console.warn('邮件分类未识别到分类编号, 模型返回: ', JSON.stringify(content).slice(0, 200));
+			}
+
+			//兜底: 判为账号但没有任何账号/验证码特征时, 降级为"其他"
+			if (category === emailConst.category.ACCOUNT && !this.isAccountLike(subject, body, from)) {
+				console.warn('邮件分类兜底: 判为账号但无账号特征, 降级为其他');
+				category = emailConst.category.OTHER;
 			}
 
 			return category;
@@ -204,6 +220,11 @@ const aiService = {
 			console.error(`邮件分类失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'} | cause: ${e?.cause?.message || e?.cause || '-'} | ${e?.stack || ''}`);
 			return emailConst.category.NONE;
 		}
+	},
+
+	isAccountLike(subject, body, from) {
+		const text = `${subject || ''}\n${body || ''}\n${from || ''}`;
+		return ACCOUNT_HINT_PATTERN.test(text) || DIGIT_CODE_PATTERN.test(text);
 	},
 
 	parseCategory(content) {
