@@ -261,8 +261,24 @@ jobs:
           fi
 
       - name: 🗑️ 删除运行记录 / Delete workflow runs
-        uses: GitRML/delete-workflow-runs@v1.2.2
         continue-on-error: true
-        with:
-          retain_days: '1'
-          keep_minimum_runs: '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧹 Deleting workflow runs older than 1 day..."
+          CUT=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+          curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100" \
+          | jq -r --arg cut "$CUT" --argjson cur ${{ github.run_id }} \
+            '.workflow_runs[] | select(.id != $cur) | select(.status == "completed") | select(.created_at < $cut) | .id' \
+          | while read -r id; do
+              [ -z "$id" ] && continue
+              echo "deleting run $id"
+              curl -s -o /dev/null -w "%{http_code}
+" -X DELETE \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${{ github.repository }}/actions/runs/$id"
+            done
+          echo "✅ Done."
