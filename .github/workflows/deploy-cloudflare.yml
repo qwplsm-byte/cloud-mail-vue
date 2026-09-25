@@ -275,8 +275,7 @@ jobs:
           | while read -r id; do
               [ -z "$id" ] && continue
               echo "deleting run $id"
-              curl -s -o /dev/null -w "%{http_code}
-" -X DELETE \
+              curl -s -o /dev/null -X DELETE \
                 -H "Authorization: Bearer $GH_TOKEN" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${{ github.repository }}/actions/runs/$id"
