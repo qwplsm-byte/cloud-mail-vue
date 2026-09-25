@@ -68,6 +68,11 @@ const zh = {
 	notAdmin: '输入的邮箱不是管理员邮箱',
 	emailExistDatabase: '有邮箱已存在数据库中',
 	notConfigOss: '对象存储未配置',
+	aiNotConfigured: 'AI 服务未配置, 请先在系统设置里配置 AI 接口',
+	aiAgentEmptyPrompt: '请输入你想让 AI 做的事情',
+	aiAgentNoResult: 'AI 没有返回可用的结果, 请换个说法再试',
+	aiAgentUnsupportedAction: 'AI 返回了不支持的操作, 已跳过',
+	aiAgentExecuteFail: '执行失败, 请稍后重试',
 	perms: {
 		"邮件": "邮件",
 		"邮件发送": "邮件发送",

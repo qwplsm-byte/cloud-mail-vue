@@ -68,6 +68,11 @@ const en = {
 	notAdmin: 'The entered email is not an administrator email',
 	emailExistDatabase: 'Email already exists in the database',
 	notConfigOss: 'Object storage not configured',
+	aiNotConfigured: 'AI service is not configured. Please set it up in System Settings first.',
+	aiAgentEmptyPrompt: 'Please describe what you want the AI to do',
+	aiAgentNoResult: 'The AI returned no usable result. Please try rephrasing.',
+	aiAgentUnsupportedAction: 'The AI returned an unsupported action and it was skipped',
+	aiAgentExecuteFail: 'Execution failed, please try again later',
 	perms: {
 		"邮件": "Emails",
 		"邮件发送": "Send Email",

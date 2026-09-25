@@ -79,6 +79,13 @@
             <span class="menu-name">{{$t('SystemSettings')}}</span>
           </el-menu-item>
         </el-sub-menu>
+
+        <!-- AI 助手：位于管理之下、个人设置之上 -->
+        <el-menu-item @click="router.push({name: 'ai'})" index="ai"
+                      :class="route.meta.name === 'ai' ? 'is-active' : ''">
+          <Icon icon="mdi:robot-outline" :width="19" :height="19" />
+          <span class="menu-name">{{$t('aiAssistant')}}</span>
+        </el-menu-item>
       </el-menu>
     </el-scrollbar>
 

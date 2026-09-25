@@ -51,6 +51,16 @@ const routes = [
                     menu: true
                 }
             },
+            {
+                path: '/ai',
+                name: 'ai',
+                component: () => import('@/views/ai/index.vue'),
+                meta: {
+                    title: 'aiAssistant',
+                    name: 'ai',
+                    menu: true
+                }
+            },
         ]
 
     },
