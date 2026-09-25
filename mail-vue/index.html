@@ -20,12 +20,21 @@
 
       var ui = readJSON('ui') || {}
       var theme = ui.theme
-      if (theme !== 'light' && theme !== 'dark' && theme !== 'android') {
+      if (theme !== 'light' && theme !== 'dark' && theme !== 'auto' && theme !== 'android') {
         // 兼容旧版本只存 dark 布尔值的情况
         theme = ui.dark === true ? 'dark' : 'light'
       }
 
-      var isDark = theme === 'dark' || (theme === 'android' && ui.androidDark === true)
+      // auto 跟随设备深浅色, 首屏就按系统设置上色, 避免先白后黑
+      var systemDark = false
+      try {
+        systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      } catch (e) {
+      }
+
+      var isDark = theme === 'dark'
+        || (theme === 'android' && ui.androidDark === true)
+        || (theme === 'auto' && systemDark)
       var root = document.documentElement
       var cls = isDark ? 'dark' : ''
       if (theme === 'android') {

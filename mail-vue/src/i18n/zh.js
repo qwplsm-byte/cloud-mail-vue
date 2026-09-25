@@ -305,6 +305,8 @@ const zh = {
     theme: '主题',
     themeLight: '浅色',
     themeDark: '暗色',
+    themeAuto: '跟随系统',
+    themeAutoDesc: '随设备的深色模式自动切换',
     themeAndroid: '安卓类原生',
     themeAndroidDesc: '跟随主界面壁纸自动取色',
     totalUserAccount: '{msg} 个',

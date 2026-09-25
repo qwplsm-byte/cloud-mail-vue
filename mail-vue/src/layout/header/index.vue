@@ -114,6 +114,7 @@ import {useI18n} from "vue-i18n";
 import {setExtend} from "@/utils/day.js"
 import {
   THEME_ANDROID,
+  THEME_AUTO,
   THEME_DARK,
   THEME_LIGHT,
   isDarkTheme,
@@ -133,6 +134,7 @@ const themePopoverRef = ref(null)
 const themeOptions = [
   {value: THEME_LIGHT, icon: 'solar:sun-2-bold', label: 'themeLight'},
   {value: THEME_DARK, icon: 'solar:moon-bold', label: 'themeDark'},
+  {value: THEME_AUTO, icon: 'solar:monitor-bold', label: 'themeAuto', desc: 'themeAutoDesc'},
   {value: THEME_ANDROID, icon: 'solar:smartphone-2-bold', label: 'themeAndroid', desc: 'themeAndroidDesc'}
 ]
 
@@ -249,8 +251,8 @@ function selectTheme(theme, e) {
 
   const root = document.documentElement
 
-  // android 的浅深由壁纸明暗决定, 这里先用缓存值预判过渡方向
-  const nextIsDark = isDarkTheme(theme, uiStore.androidDark)
+  // android 的浅深由壁纸明暗决定, auto 由设备明暗决定, 这里先用当前状态预判过渡方向
+  const nextIsDark = isDarkTheme(theme, uiStore.androidDark, uiStore.systemDark)
 
   const applyChange = () => {
     uiStore.theme = theme

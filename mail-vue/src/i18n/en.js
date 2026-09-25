@@ -305,6 +305,8 @@ const en = {
     theme: 'Theme',
     themeLight: 'Light',
     themeDark: 'Dark',
+    themeAuto: 'System',
+    themeAutoDesc: 'Follows your device dark mode',
     themeAndroid: 'Android-like',
     themeAndroidDesc: 'Colors extracted from the main background',
     totalUserAccount: '{msg}',

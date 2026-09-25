@@ -11,9 +11,10 @@ import {
 
 export const THEME_LIGHT = 'light'
 export const THEME_DARK = 'dark'
+export const THEME_AUTO = 'auto'
 export const THEME_ANDROID = 'android'
 
-export const THEME_VALUES = [THEME_LIGHT, THEME_DARK, THEME_ANDROID]
+export const THEME_VALUES = [THEME_LIGHT, THEME_DARK, THEME_AUTO, THEME_ANDROID]
 
 // android 令牌注入用的 <style> 节点 id, 首屏由 index.html 复用同一 id
 export const ANDROID_STYLE_ID = 'android-theme-tokens'
@@ -28,6 +29,9 @@ const SAMPLE_SIZE = 48
 const VIDEO_RE = /\.(mp4|webm|ogv|ogg|mov|m4v)(\?|#|$)/i
 
 const MOBILE_QUERY = '(pointer: fine) and (hover: hover)'
+
+// 设备深色模式查询, auto 主题跟随它切换
+const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
 
 function readUiStorage() {
 	try {
@@ -73,7 +77,7 @@ function isMobilePointer() {
 
 function prefersDark() {
 	try {
-		return window.matchMedia('(prefers-color-scheme: dark)').matches
+		return window.matchMedia(SYSTEM_DARK_QUERY).matches
 	} catch (e) {
 		return false
 	}
@@ -84,8 +88,10 @@ export function isImageUrl(url) {
 }
 
 /** android 暗色需要同时叠加 dark 基线与 android 覆盖层 */
-export function isDarkTheme(theme, androidDark) {
-	return theme === THEME_DARK || (theme === THEME_ANDROID && androidDark === true)
+export function isDarkTheme(theme, androidDark, systemDark) {
+	return theme === THEME_DARK
+		|| (theme === THEME_ANDROID && androidDark === true)
+		|| (theme === THEME_AUTO && systemDark === true)
 }
 
 /**
@@ -159,12 +165,12 @@ function resolveThemeColor(theme, dark, tokens) {
 /**
  * 把主题同步到 DOM: 根节点 class、color-scheme、theme-color 与 android 令牌。
  *
- * @param {{theme: string, androidDark: boolean, seed?: string}} state
+ * @param {{theme: string, androidDark: boolean, systemDark?: boolean, seed?: string}} state
  * @returns {{tokens: (Record<string, string>|null), css: (string|null), themeColor: string}}
  */
 export function applyTheme(state) {
 	const theme = THEME_VALUES.indexOf(state.theme) === -1 ? THEME_LIGHT : state.theme
-	const dark = isDarkTheme(theme, state.androidDark)
+	const dark = isDarkTheme(theme, state.androidDark, state.systemDark)
 	const root = document.documentElement
 
 	const classes = []
@@ -337,12 +343,36 @@ export function bootstrapTheme() {
 		seed = cached ? cached.seed : DEFAULT_SEED
 	}
 
-	applyTheme({theme: ui.theme, androidDark: ui.androidDark, seed})
+	// auto 主题首屏就要按设备明暗上色, 这里补一次真实值, 避免沿用默认的浅色
+	ui.systemDark = prefersDark()
+
+	applyTheme({theme: ui.theme, androidDark: ui.androidDark, systemDark: ui.systemDark, seed})
+}
+
+/**
+ * 监听设备深浅色变化。auto 主题据此实时切换, 其它主题只更新状态备用。
+ * 需在 bootstrapTheme 之后调用一次。
+ */
+export function watchSystemTheme() {
+	const ui = useUiStore()
+	const query = window.matchMedia(SYSTEM_DARK_QUERY)
+
+	const sync = () => {
+		ui.systemDark = query.matches
+		// android 的明暗由壁纸主色决定, 与设备设置无关, 无需重绘
+		if (ui.theme === THEME_AUTO) {
+			refreshTheme()
+		}
+	}
+
+	query.addEventListener('change', sync)
+	sync()
 }
 
 /**
  * 按当前主题与主界面壁纸刷新配色。android 主题会从壁纸取主色, 并据此自动
  * 决定走浅色还是深色 Material; 取色失败或壁纸为视频时回退默认种子。
+ * auto 主题则跟随设备深浅色。
  */
 export async function refreshTheme() {
 	const ui = useUiStore()
@@ -350,7 +380,7 @@ export async function refreshTheme() {
 	const theme = ui.theme
 
 	if (theme !== THEME_ANDROID) {
-		applyTheme({theme, androidDark: false, seed: null})
+		applyTheme({theme, androidDark: false, systemDark: ui.systemDark, seed: null})
 		return null
 	}
 
