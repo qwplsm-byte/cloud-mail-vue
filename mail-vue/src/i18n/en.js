@@ -427,6 +427,10 @@ const en = {
     aiPresetAddEmailsPrompt: 'Add 5 mailboxes to my account',
     aiPresetRegisterUsers: 'Register multiple users',
     aiPresetRegisterUsersPrompt: 'Register 3 new users',
+    aiPresetDeleteEmails: 'Bulk delete mailboxes',
+    aiPresetDeleteEmailsPrompt: 'Delete 5 mailboxes starting with test',
+    aiPresetDeleteUsers: 'Bulk delete users',
+    aiPresetDeleteUsersPrompt: 'Delete 3 users starting with test',
     aiPlanTitle: 'Operation plan',
     aiMatchCount: '{count} emails matched',
     aiLimited: 'Too many emails — only the latest 500 will be processed',
@@ -450,9 +454,16 @@ const en = {
     aiTypeAutoCategorize: 'AI auto categorize',
     aiTypeAddEmails: 'Add mailboxes',
     aiTypeRegisterUsers: 'Register users',
+    aiTypeDeleteEmails: 'Delete mailboxes',
+    aiTypeDeleteUsers: 'Delete users',
     aiCreateCount: 'Create {count}',
     aiCreated: '{count} created',
     aiCreateLimited: 'The create limit is reached — only the available amount will be created',
+    aiDeleteCount: 'Delete {count}',
+    aiDeleted: '{count} deleted',
+    aiDeleteLimited: 'The delete limit is reached — only this many will be deleted',
+    aiDeleteConfirmTitle: 'Confirm deletion',
+    aiDeleteConfirm: 'Deletion cannot be undone. Run this delete operation?',
 }
 
 export default en

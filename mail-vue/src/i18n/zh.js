@@ -423,11 +423,15 @@ const zh = {
     aiPresetReadNoticePrompt: '把所有通知类邮件标记为已读',
     aiPresetSummary: '总结今天的邮件',
     aiPresetSummaryPrompt: '帮我总结一下今天收到的重要邮件',
-    //下面两个预设只把模板填进输入框, 数量由用户自己改
+    //下面这些预设只把模板填进输入框, 数量或关键词由用户自己改
     aiPresetAddEmails: '为本账户添加多个邮箱',
     aiPresetAddEmailsPrompt: '为本账户添加 5 个邮箱',
     aiPresetRegisterUsers: '注册多个用户',
     aiPresetRegisterUsersPrompt: '注册 3 个新用户',
+    aiPresetDeleteEmails: '批量删除邮箱',
+    aiPresetDeleteEmailsPrompt: '删除 test 开头的 5 个邮箱',
+    aiPresetDeleteUsers: '批量删除用户',
+    aiPresetDeleteUsersPrompt: '删除 test 开头的 3 个用户',
     aiPlanTitle: '操作计划',
     aiMatchCount: '匹配 {count} 封',
     aiLimited: '邮件较多，本次仅处理最新的 500 封',
@@ -451,8 +455,15 @@ const zh = {
     aiTypeAutoCategorize: 'AI 自动归类',
     aiTypeAddEmails: '添加邮箱',
     aiTypeRegisterUsers: '注册用户',
+    aiTypeDeleteEmails: '删除邮箱',
+    aiTypeDeleteUsers: '删除用户',
     aiCreateCount: '创建 {count} 个',
     aiCreated: '已创建 {count} 个',
     aiCreateLimited: '已达可创建的数量上限，本次只会创建可用的数量',
+    aiDeleteCount: '将删除 {count} 个',
+    aiDeleted: '已删除 {count} 个',
+    aiDeleteLimited: '已达单次删除上限，本次只会删除这么多',
+    aiDeleteConfirmTitle: '确认删除',
+    aiDeleteConfirm: '删除后不可恢复，确定执行这次删除操作吗？',
 }
 export default zh

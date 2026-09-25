@@ -26,7 +26,7 @@
 
           <div class="preset-label">{{ $t('aiPresetTitle') }}</div>
           <div class="preset-grid">
-            <button v-for="preset in presetList" :key="preset.key" class="preset-card" @click="usePreset(preset)">
+            <button v-for="preset in presetList" :key="preset.key" class="preset-card" :class="{ 'is-danger': preset.danger }" @click="usePreset(preset)">
               <Icon :icon="preset.icon" :width="18" :height="18" />
               <span class="preset-name">{{ $t(preset.label) }}</span>
               <Icon class="preset-arrow" icon="mdi:arrow-top-right" :width="15" :height="15" />
@@ -80,9 +80,15 @@
 
                       <div v-if="action.samples && action.samples.length" class="action-samples">
                         <span class="samples-label">{{ $t('aiSamples') }}</span>
-                        <div v-for="sample in action.samples" :key="sample.emailId" class="sample-item">
-                          <span class="sample-subject">{{ sample.subject || $t('noSubject') }}</span>
-                          <span class="sample-from">{{ sample.sendEmail }}</span>
+                        <div v-for="sample in action.samples" :key="sample.emailId || sample.email" class="sample-item">
+                          <!--删除类操作列出的是具体账号地址, 邮件类列出主题与发件人-->
+                          <template v-if="sample.emailId">
+                            <span class="sample-subject">{{ sample.subject || $t('noSubject') }}</span>
+                            <span class="sample-from">{{ sample.sendEmail }}</span>
+                          </template>
+                          <template v-else>
+                            <span class="sample-subject">{{ sample.email }}</span>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -117,9 +123,9 @@
                             :width="15" :height="15" :class="item.success ? 'ok' : 'fail'" />
                       <span class="result-text">{{ resultText(item) }}</span>
                     </div>
-                    <!--新注册用户会带上随机初始密码, 直接列出来方便保存-->
-                    <div v-if="item.created && item.created.length" class="created-list">
-                      <div v-for="row in item.created" :key="row.email" class="created-item">
+                    <!--新增/删除的账号都以 items 返回, 新注册用户还会带上随机初始密码, 直接列出来方便保存-->
+                    <div v-if="item.items && item.items.length" class="created-list">
+                      <div v-for="row in item.items" :key="row.email" class="created-item">
                         <span class="created-email">{{ row.email }}</span>
                         <span v-if="row.password" class="created-pwd">{{ row.password }}</span>
                       </div>
@@ -239,18 +245,20 @@ const presets = [
   {key: 'promo', icon: 'mdi:tag-remove-outline', label: 'aiPresetDeletePromo', prompt: 'aiPresetDeletePromoPrompt'},
   {key: 'notice', icon: 'mdi:email-open-outline', label: 'aiPresetReadNotice', prompt: 'aiPresetReadNoticePrompt'},
   {key: 'summary', icon: 'mdi:text-box-search-outline', label: 'aiPresetSummary', prompt: 'aiPresetSummaryPrompt'},
-  //这两个要自己填数量, 所以只把模板填进输入框, 不直接提交
+  //这几个要自己填数量或关键词, 所以只把模板填进输入框, 不直接提交
   {key: 'addEmails', icon: 'mdi:email-plus-outline', label: 'aiPresetAddEmails', prompt: 'aiPresetAddEmailsPrompt', fill: true},
-  {key: 'registerUsers', icon: 'mdi:account-multiple-plus-outline', label: 'aiPresetRegisterUsers', prompt: 'aiPresetRegisterUsersPrompt', fill: true, admin: true},
+  {key: 'registerUsers', icon: 'mdi:account-multiple-plus-outline', label: 'aiPresetRegisterUsers', prompt: 'aiPresetRegisterUsersPrompt', fill: true, perm: 'user:add'},
+  {key: 'deleteEmails', icon: 'mdi:email-minus-outline', label: 'aiPresetDeleteEmails', prompt: 'aiPresetDeleteEmailsPrompt', fill: true, danger: true, perm: 'account:delete'},
+  {key: 'deleteUsers', icon: 'mdi:account-multiple-minus-outline', label: 'aiPresetDeleteUsers', prompt: 'aiPresetDeleteUsersPrompt', fill: true, danger: true, perm: 'user:delete'},
 ]
 
-//注册用户是管理员专属(与后端 user:add 权限一致), 没权限就不显示这个预设
-const isAdmin = computed(() => {
+//注册/删除用户、删除邮箱都有对应权限要求, 与后端判定一致, 没权限就不显示对应预设
+function hasPerm(key) {
   const keys = userStore.user?.permKeys || []
-  return keys.includes('*') || keys.includes('user:add')
-})
+  return keys.includes('*') || keys.includes(key)
+}
 
-const presetList = computed(() => presets.filter(item => !item.admin || isAdmin.value))
+const presetList = computed(() => presets.filter(item => !item.perm || hasPerm(item.perm)))
 
 const CATEGORY_LABEL = {
   1: 'categoryAccount',
@@ -268,6 +276,8 @@ const ACTION_LABEL = {
   autoCategorize: 'aiTypeAutoCategorize',
   addEmails: 'aiTypeAddEmails',
   registerUsers: 'aiTypeRegisterUsers',
+  deleteEmails: 'aiTypeDeleteEmails',
+  deleteUsers: 'aiTypeDeleteUsers',
 }
 
 const ACTION_ICON = {
@@ -278,13 +288,21 @@ const ACTION_ICON = {
   autoCategorize: 'mdi:auto-fix',
   addEmails: 'mdi:email-plus-outline',
   registerUsers: 'mdi:account-multiple-plus-outline',
+  deleteEmails: 'mdi:email-minus-outline',
+  deleteUsers: 'mdi:account-multiple-minus-outline',
 }
 
 //这两个是按数量创建账号, 与按邮件封数统计的操作文案不同
 const BULK_TYPES = ['addEmails', 'registerUsers']
+//这两个是按账号个数删除, 文案用"删除"而不是"影响"
+const DELETE_TARGET_TYPES = ['deleteEmails', 'deleteUsers']
 
 function isBulk(type) {
   return BULK_TYPES.includes(type)
+}
+
+function isDeleteTarget(type) {
+  return DELETE_TARGET_TYPES.includes(type)
 }
 
 function actionLabel(type) {
@@ -300,7 +318,7 @@ function categoryName(category) {
 }
 
 function hasDelete(plan) {
-  return plan.some(action => action.type === 'delete')
+  return plan.some(action => action.type === 'delete' || isDeleteTarget(action.type))
 }
 
 function resultText(item) {
@@ -311,6 +329,9 @@ function resultText(item) {
   if (isBulk(item.type)) {
     return `${name} · ${t('aiCreated', {count: item.count})}`
   }
+  if (isDeleteTarget(item.type)) {
+    return `${name} · ${t('aiDeleted', {count: item.count})}`
+  }
   return `${name} · ${t('aiAffected', {count: item.count})}`
 }
 
@@ -319,11 +340,20 @@ function countText(action) {
     //批量创建没有"匹配"的概念, 直接显示将要创建的数量
     return t('aiCreateCount', {count: action.count || 0})
   }
+  if (isDeleteTarget(action.type)) {
+    return action.count ? t('aiDeleteCount', {count: action.count}) : t('aiNoMatch')
+  }
   return action.count ? t('aiMatchCount', {count: action.count}) : t('aiNoMatch')
 }
 
 function limitedText(action) {
-  return isBulk(action.type) ? t('aiCreateLimited') : t('aiLimited')
+  if (isBulk(action.type)) {
+    return t('aiCreateLimited')
+  }
+  if (isDeleteTarget(action.type)) {
+    return t('aiDeleteLimited')
+  }
+  return t('aiLimited')
 }
 
 function scrollToBottom() {
@@ -391,11 +421,26 @@ async function runPlan(msg) {
     return
   }
 
+  //删除类操作不可恢复, 执行前再确认一次
+  if (hasDelete(msg.plan)) {
+    try {
+      await ElMessageBox.confirm(t('aiDeleteConfirm'), t('aiDeleteConfirmTitle'), {
+        confirmButtonText: t('aiExecute'),
+        cancelButtonText: t('cancel'),
+        type: 'warning',
+      })
+    } catch (e) {
+      return
+    }
+  }
+
   const actions = msg.plan.map(action => ({
     type: action.type,
     category: action.category,
     count: action.count,
     prefix: action.prefix,
+    keyword: action.keyword,
+    status: action.status,
     description: action.description,
     filter: action.filter,
   }))
@@ -579,6 +624,15 @@ function clearConversation() {
     .preset-arrow {
       color: var(--el-text-color-placeholder);
     }
+
+    //删除类预设用危险色区分, 避免和普通整理操作混淆
+    &.is-danger {
+      color: var(--el-color-danger);
+
+      &:hover {
+        border-color: var(--el-color-danger);
+      }
+    }
   }
 }
 
@@ -733,7 +787,7 @@ function clearConversation() {
     background: var(--el-fill-color);
     color: var(--el-text-color-regular);
 
-    &.delete {
+    &.delete, &.deleteEmails, &.deleteUsers {
       background: var(--el-color-danger-light-9);
       color: var(--el-color-danger);
     }

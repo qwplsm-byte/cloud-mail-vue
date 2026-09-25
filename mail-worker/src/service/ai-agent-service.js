@@ -1,9 +1,10 @@
 import orm from '../entity/orm';
 import email from '../entity/email';
 import account from '../entity/account';
+import user from '../entity/user';
 import { star } from '../entity/star';
-import { attConst, emailConst, isDel, settingConst } from '../const/entity-const';
-import { and, desc, eq, inArray, count, gte, lte, sql } from 'drizzle-orm';
+import { attConst, emailConst, isDel, settingConst, userConst } from '../const/entity-const';
+import { and, desc, eq, inArray, count, gte, lte, ne, sql } from 'drizzle-orm';
 import emailService from './email-service';
 import accountService from './account-service';
 import userService from './user-service';
@@ -32,12 +33,16 @@ const AI_TIMEOUT_MS = 120 * 1000;
 const AI_MAX_TOKENS = 4096;
 //Workers AI 内置小模型的输出上限较低, 给太多会直接报错, 这里做个封顶
 const WORKERS_AI_MAX_TOKENS = 1024;
-//单次批量建号/建邮箱的数量上限, 防止一句话造出几百个账号
+//单次批量创建/删除账号的数量上限, 防止一句话造出或删掉几百个账号
 const MAX_BULK_COUNT = 20;
 
-const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize', 'addEmails', 'registerUsers'];
-//这两个操作按数量批量执行, 不涉及邮件筛选
-const BULK_ACTION_TYPES = ['addEmails', 'registerUsers'];
+const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize', 'addEmails', 'registerUsers', 'deleteEmails', 'deleteUsers'];
+//创建账号类: 按 count 批量新建
+const CREATE_ACTION_TYPES = ['addEmails', 'registerUsers'];
+//删除账号类: 按关键词/状态/数量挑出目标后删除
+const DELETE_TARGET_TYPES = ['deleteEmails', 'deleteUsers'];
+//以上都不看邮件筛选, 统一按"目标数量"处理
+const TARGET_ACTION_TYPES = [...CREATE_ACTION_TYPES, ...DELETE_TARGET_TYPES];
 
 const CATEGORY_NAME = {
 	[emailConst.category.NONE]: '未分类',
@@ -49,7 +54,7 @@ const CATEGORY_NAME = {
 };
 
 const SYSTEM_PROMPT = `你是一个邮件助手, 负责把用户的自然语言需求转换为对邮件的批量操作计划。
-你只能使用以下 7 种操作类型, 不允许编造其它操作:
+你只能使用以下 9 种操作类型, 不允许编造其它操作:
 1. delete —— 删除邮件
 2. categorize —— 把邮件归入指定分类, 必须同时给出 category
 3. markRead —— 标记为已读
@@ -57,6 +62,8 @@ const SYSTEM_PROMPT = `你是一个邮件助手, 负责把用户的自然语言�
 5. autoCategorize —— 让 AI 逐封判断并归类"未分类"的邮件(用户说"整理未分类邮件/把邮件归到合适的分类"时使用)
 6. addEmails —— 为当前账户批量添加新邮箱, 必须给出 count(数量), 可选 prefix(邮箱前缀)
 7. registerUsers —— 批量注册新用户, 必须给出 count(数量), 可选 prefix(邮箱前缀); 仅当当前用户是管理员时才允许使用
+8. deleteEmails —— 批量删除当前账户名下的邮箱, 可选 keyword(邮箱开头关键词)、count(最多删几个); 主邮箱不会被删除
+9. deleteUsers —— 批量删除用户, 可选 keyword(邮箱开头关键词)、status(0=正常, 1=禁用)、count(最多删几个); 仅当当前用户是管理员时才允许使用
 
 分类编号: 0=未分类, 1=账号, 2=通知, 3=账单, 4=推广, 5=其他
 
@@ -74,6 +81,12 @@ addEmails / registerUsers 的补充说明:
 - count 必须是用户明确说出的数量(正整数), 不要臆造。用户没给数量时不要输出这两个操作, 改为在 reply 里追问要创建多少个。
 - 下面会给出当前用户身份, 普通用户禁止使用 registerUsers, 输出了也会被服务端拒绝。
 
+deleteEmails / deleteUsers 的补充说明:
+- keyword 是邮箱"开头"匹配的关键词(如 test 能匹配 test1@域名, 匹配不到 mytest@域名); count 是本次最多删几个, 省略表示尽量多删(有服务端上限)。
+- keyword 和 count 至少要给出一个, 否则不要输出这两个操作, 改为在 reply 里追问要删哪些。
+- 这两个操作不可恢复, reply 里必须明确提醒用户这是删除操作。
+- 普通用户禁止使用 deleteUsers, deleteEmails 只能删自己名下的邮箱, 主邮箱不会被删。
+
 输出要求:
 - 只输出一个 JSON 对象, 不要输出任何解释文字, 不要使用 markdown 代码块。
 - 如果用户只是想了解或总结邮件, actions 返回空数组, 把答案写在 reply 中。
@@ -90,7 +103,11 @@ addEmails / registerUsers 的补充说明:
 批量添加邮箱时:
 {"reply":"...","actions":[{"type":"addEmails","count":5,"prefix":"test","description":"为本账户添加 5 个邮箱"}]}
 批量注册用户时(仅管理员):
-{"reply":"...","actions":[{"type":"registerUsers","count":3,"description":"注册 3 个新用户"}]}`;
+{"reply":"...","actions":[{"type":"registerUsers","count":3,"description":"注册 3 个新用户"}]}
+批量删除邮箱时:
+{"reply":"...","actions":[{"type":"deleteEmails","keyword":"test","count":5,"description":"删除 test 开头的 5 个邮箱"}]}
+批量删除用户时(仅管理员):
+{"reply":"...","actions":[{"type":"deleteUsers","keyword":"test","count":3,"description":"删除 test 开头的 3 个用户"}]}`;
 
 const aiAgentService = {
 
@@ -108,8 +125,8 @@ const aiAgentService = {
 		}
 
 		const stats = await this.buildStats(c, userId);
-		const isAdmin = await this.isAdmin(c, userId);
-		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}\n当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers)' : '普通用户(禁止使用 registerUsers)'}`;
+		const isAdmin = await this.isAdmin(c, userId, 'user:add');
+		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}\n当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers 与 deleteUsers)' : '普通用户(禁止使用 registerUsers 与 deleteUsers)'}`;
 
 		const messages = [
 			{ role: 'system', content: SYSTEM_PROMPT },
@@ -161,9 +178,9 @@ const aiAgentService = {
 					continue;
 				}
 
-				if (BULK_ACTION_TYPES.includes(action.type)) {
+				if (CREATE_ACTION_TYPES.includes(action.type)) {
 					//注册用户是管理员专属, 与 /user/add 一致按 user:add 权限判定
-					if (action.type === 'registerUsers' && !(await this.isAdmin(c, userId))) {
+					if (action.type === 'registerUsers' && !(await this.isAdmin(c, userId, 'user:add'))) {
 						results.push({ type: action.type, success: false, message: t('unauthorized') });
 						continue;
 					}
@@ -172,7 +189,23 @@ const aiAgentService = {
 						? await this.addEmails(c, userId, action)
 						: await this.registerUsers(c, action);
 
-					results.push({ type: action.type, success: true, count: created.length, created, description: action.description });
+					results.push({ type: action.type, success: true, count: created.length, items: created, description: action.description });
+					continue;
+				}
+
+				if (DELETE_TARGET_TYPES.includes(action.type)) {
+					//删用户是管理员专属, 与 /user/delete 一致按 user:delete 判定
+					//删邮箱与 /account/delete 一致按 account:delete 判定, 普通用户默认角色就带这个权限
+					const permKey = action.type === 'deleteUsers' ? 'user:delete' : 'account:delete';
+
+					if (!(await this.isAdmin(c, userId, permKey))) {
+						results.push({ type: action.type, success: false, message: t('unauthorized') });
+						continue;
+					}
+
+					const deleted = await this.deleteTargets(c, userId, action);
+
+					results.push({ type: action.type, success: true, count: deleted.length, items: deleted, description: action.description });
 					continue;
 				}
 
@@ -314,12 +347,28 @@ const aiAgentService = {
 				continue;
 			}
 
-			if (BULK_ACTION_TYPES.includes(action.type)) {
+			if (CREATE_ACTION_TYPES.includes(action.type)) {
 				//批量建号/建邮箱不看邮件, 数量受设置与角色上限约束
 				const max = action.type === 'addEmails' ? await this.addEmailQuota(c, userId) : MAX_BULK_COUNT;
 				const total = Math.min(action.count, max);
 
 				actions.push({ ...action, filter: {}, count: total, limited: total < action.count, samples: [] });
+				continue;
+			}
+
+			if (DELETE_TARGET_TYPES.includes(action.type)) {
+				//删除类先在计划阶段把实际能删到的目标查出来, 让用户在确认前看到影响范围
+				const rows = action.type === 'deleteEmails'
+					? await this.resolveDeleteEmails(c, userId, action)
+					: await this.resolveDeleteUsers(c, userId, action);
+
+				actions.push({
+					...action,
+					filter: {},
+					count: rows.length,
+					limited: rows.length >= (action.count || MAX_BULK_COUNT),
+					samples: rows.slice(0, SAMPLE_SIZE).map(row => ({ email: row.email }))
+				});
 				continue;
 			}
 
@@ -429,6 +478,9 @@ const aiAgentService = {
 		let category = null;
 		let count = null;
 		let prefix = '';
+		let keyword = '';
+		let status = null;
+		const isDelete = DELETE_TARGET_TYPES.includes(type);
 
 		if (type === 'categorize') {
 			category = Number(action.category);
@@ -438,10 +490,10 @@ const aiAgentService = {
 			}
 		}
 
-		if (BULK_ACTION_TYPES.includes(type)) {
+		if (CREATE_ACTION_TYPES.includes(type)) {
 			count = Number(action.count);
 
-			//没给数量或数量不合法时直接丢弃这条操作, 避免误建
+			//创建类没给数量就直接丢弃, 避免误建
 			if (!Number.isInteger(count) || count < 1) {
 				return null;
 			}
@@ -450,11 +502,41 @@ const aiAgentService = {
 			prefix = this.normalizePrefix(action.prefix);
 		}
 
+		if (isDelete) {
+			keyword = String(action.keyword || '').trim().toLowerCase().replace(/[%_]/g, '').slice(0, 50);
+
+			//count 省略表示尽量多删, 给了就按给的来
+			if (action.count !== undefined && action.count !== null && action.count !== '') {
+				count = Number(action.count);
+
+				if (!Number.isInteger(count) || count < 1) {
+					return null;
+				}
+
+				count = Math.min(count, MAX_BULK_COUNT);
+			}
+
+			if (type === 'deleteUsers' && action.status !== undefined && action.status !== null && action.status !== '') {
+				status = Number(action.status);
+
+				if (status !== userConst.status.NORMAL && status !== userConst.status.BAN) {
+					return null;
+				}
+			}
+
+			//既没关键词也没数量时无法确定要删什么, 丢弃后由模型在对话里追问
+			if (!keyword && !count) {
+				return null;
+			}
+		}
+
 		return {
 			type,
 			category,
 			count,
 			prefix,
+			keyword,
+			status,
 			filter: this.normalizeFilter(action.filter),
 			description: String(action.description || '').slice(0, 200)
 		};
@@ -556,16 +638,16 @@ const aiAgentService = {
 		return permKeys.includes('*') || permKeys.includes('email:delete');
 	},
 
-	//管理员判定: 来自 ADMIN 邮箱或拥有 user:add 权限(与 /user/add 路由的校验一致)
-	async isAdmin(c, userId) {
-		const user = c.get('user');
+	//管理员判定: 来自 ADMIN 邮箱, 或拥有指定权限(与对应路由的校验一致)
+	async isAdmin(c, userId, permKey) {
+		const userRow = await userService.selectById(c, userId);
 
-		if (user?.email && user.email === c.env.admin) {
+		if (userRow?.email && userRow.email === c.env.admin) {
 			return true;
 		}
 
 		const permKeys = await permService.userPermKeys(c, userId);
-		return permKeys.includes('*') || permKeys.includes('user:add');
+		return permKeys.includes('*') || permKeys.includes(permKey);
 	},
 
 	//按设置开关与角色上限算出本账户还能添加多少个邮箱
@@ -646,6 +728,77 @@ const aiAgentService = {
 		}
 
 		return created;
+	},
+
+	//批量删除: 先按关键词/状态/数量挑出目标, 再逐个删, 一个失败不影响其余
+	async deleteTargets(c, userId, action) {
+		const rows = action.type === 'deleteEmails'
+			? await this.resolveDeleteEmails(c, userId, action)
+			: await this.resolveDeleteUsers(c, userId, action);
+		const deleted = [];
+
+		for (const row of rows) {
+			try {
+				if (action.type === 'deleteEmails') {
+					await accountService.delete(c, { accountId: row.accountId }, userId);
+				} else {
+					await userService.delete(c, row.userId);
+				}
+
+				deleted.push({ email: row.email });
+			} catch (e) {
+				console.error(`AI 助手删除${action.type === 'deleteEmails' ? '邮箱' : '用户'}失败: ${row.email} | ${e?.message || '(empty)'}`);
+			}
+		}
+
+		return deleted;
+	},
+
+	//挑出本账户下待删的邮箱: 主邮箱永不入选, 最近添加的优先
+	async resolveDeleteEmails(c, userId, action) {
+		const userRow = await userService.selectById(c, userId);
+
+		if (!userRow) {
+			return [];
+		}
+
+		const conditions = [
+			eq(account.userId, userId),
+			eq(account.isDel, isDel.NORMAL),
+			ne(account.email, userRow.email)
+		];
+
+		if (action.keyword) {
+			conditions.push(sql`${account.email} COLLATE NOCASE LIKE ${action.keyword + '%'}`);
+		}
+
+		return orm(c).select({ accountId: account.accountId, email: account.email }).from(account)
+			.where(and(...conditions)).orderBy(desc(account.accountId))
+			.limit(action.count || MAX_BULK_COUNT).all();
+	},
+
+	//挑出待删用户: 排除自己和 ADMIN 账号, 最近注册的优先
+	async resolveDeleteUsers(c, userId, action) {
+		const conditions = [
+			eq(user.isDel, isDel.NORMAL),
+			ne(user.userId, userId)
+		];
+
+		if (c.env.admin) {
+			conditions.push(ne(user.email, c.env.admin));
+		}
+
+		if (action.keyword) {
+			conditions.push(sql`${user.email} COLLATE NOCASE LIKE ${action.keyword + '%'}`);
+		}
+
+		if (action.status !== null) {
+			conditions.push(eq(user.status, action.status));
+		}
+
+		return orm(c).select({ userId: user.userId, email: user.email }).from(user)
+			.where(and(...conditions)).orderBy(desc(user.userId))
+			.limit(action.count || MAX_BULK_COUNT).all();
 	},
 
 	//生成可用邮箱地址: 指定了前缀就"前缀+序号", 否则随机; 自动避开已占用与黑名单前缀
