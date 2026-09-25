@@ -1,7 +1,7 @@
 import orm from '../entity/orm';
 import email from '../entity/email';
 import { star } from '../entity/star';
-import { attConst, emailConst, isDel } from '../const/entity-const';
+import { attConst, emailConst, isDel, settingConst } from '../const/entity-const';
 import { and, desc, eq, inArray, count, gte, lte, sql } from 'drizzle-orm';
 import emailService from './email-service';
 import aiService from './ai-service';
@@ -20,6 +20,12 @@ const SAMPLE_SIZE = 5;
 //自动归类单次处理的邮件数量与并发度(每封都要调一次模型)
 const AUTO_CATEGORIZE_LIMIT = 15;
 const AUTO_CATEGORIZE_CONCURRENCY = 5;
+//AI 接口最长等待时间, 推理型模型出结果可能要一分钟以上
+const AI_TIMEOUT_MS = 120 * 1000;
+//规划阶段要输出 JSON, 给推理模型留足 token 余量, 否则推理占满后 content 为空
+const AI_MAX_TOKENS = 4096;
+//Workers AI 内置小模型的输出上限较低, 给太多会直接报错, 这里做个封顶
+const WORKERS_AI_MAX_TOKENS = 1024;
 
 const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize'];
 
@@ -87,7 +93,15 @@ const aiAgentService = {
 			{ role: 'user', content: `${dateInfo}\n\n用户需求: ${prompt}` }
 		];
 
-		const content = await this.chat(c, options, messages, 900);
+		let content;
+
+		try {
+			content = await this.chat(c, options, messages, AI_MAX_TOKENS);
+		} catch (e) {
+			console.error(`AI 助手规划失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+			throw new BizError(this.isTimeoutError(e) ? t('aiAgentTimeout') : t('aiAgentRequestFail'));
+		}
+
 		const parsed = this.parsePlan(content);
 
 		if (!parsed) {
@@ -223,12 +237,15 @@ const aiAgentService = {
 		let updated = 0;
 
 		for (const batch of this.chunk(rows, AUTO_CATEGORIZE_CONCURRENCY)) {
+			//用户显式要求归类, 这里临时打开分类开关, 不受收件自动分类总开关限制
+			const classifyOptions = { ...options, aiCategory: settingConst.aiCategory.OPEN };
+
 			const categories = await Promise.all(batch.map(row => aiService.classifyEmail(c, {
 				subject: row.subject,
 				from: { address: row.sendEmail },
 				text: row.text,
 				html: row.content
-			}, options)));
+			}, classifyOptions)));
 
 			for (let i = 0; i < batch.length; i++) {
 				const category = categories[i];
@@ -478,8 +495,12 @@ const aiAgentService = {
 
 	chat(c, options, messages, maxTokens) {
 		return options.aiApiKey
-			? aiService.chatWithExternalAI(options, messages, maxTokens)
-			: aiService.chatWithWorkersAI(c, messages, maxTokens);
+			? aiService.chatWithExternalAI(options, messages, maxTokens, AI_TIMEOUT_MS)
+			: aiService.chatWithWorkersAI(c, messages, Math.min(maxTokens, WORKERS_AI_MAX_TOKENS));
+	},
+
+	isTimeoutError(e) {
+		return e?.name === 'AbortError' || /超时|timeout/i.test(`${e?.message || ''}`);
 	},
 
 	parsePlan(content) {

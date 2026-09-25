@@ -412,6 +412,8 @@ const zh = {
     aiPlaceholder: '例如：把所有推广邮件删掉 / 整理未分类的邮件',
     aiSend: '发送',
     aiThinking: 'AI 正在思考…',
+    aiThinkingHint: '模型正在推理，慢模型可能要一分钟左右，请稍候…',
+    aiTimeout: 'AI 响应超时了，请稍后重试，或在系统设置里换一个更快的模型',
     aiPresetTitle: '试试这些',
     aiPresetUncategorized: '整理未分类邮件',
     aiPresetUncategorizedPrompt: '把未分类的邮件整理到合适的分类里',

@@ -73,6 +73,8 @@ const zh = {
 	aiAgentNoResult: 'AI 没有返回可用的结果, 请换个说法再试',
 	aiAgentUnsupportedAction: 'AI 返回了不支持的操作, 已跳过',
 	aiAgentExecuteFail: '执行失败, 请稍后重试',
+	aiAgentRequestFail: 'AI 请求失败, 请检查系统设置里的 AI 接口配置',
+	aiAgentTimeout: 'AI 响应超时, 模型推理太久已中断。请重试, 或在系统设置里换一个更快的模型',
 	perms: {
 		"邮件": "邮件",
 		"邮件发送": "邮件发送",

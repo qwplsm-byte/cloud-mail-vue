@@ -412,6 +412,8 @@ const en = {
     aiPlaceholder: 'e.g. Delete all promo emails / Organize uncategorized mail',
     aiSend: 'Send',
     aiThinking: 'AI is thinking…',
+    aiThinkingHint: 'The model is reasoning. A slower model may need about a minute, please wait…',
+    aiTimeout: 'The AI request timed out. Please retry later, or switch to a faster model in System Settings.',
     aiPresetTitle: 'Try these',
     aiPresetUncategorized: 'Organize uncategorized mail',
     aiPresetUncategorizedPrompt: 'Sort uncategorized emails into the right categories',

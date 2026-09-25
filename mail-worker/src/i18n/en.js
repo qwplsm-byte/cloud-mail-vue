@@ -73,6 +73,8 @@ const en = {
 	aiAgentNoResult: 'The AI returned no usable result. Please try rephrasing.',
 	aiAgentUnsupportedAction: 'The AI returned an unsupported action and it was skipped',
 	aiAgentExecuteFail: 'Execution failed, please try again later',
+	aiAgentRequestFail: 'AI request failed. Please check the AI endpoint settings.',
+	aiAgentTimeout: 'The AI took too long and the request was aborted. Please retry, or switch to a faster model in System Settings.',
 	perms: {
 		"邮件": "Emails",
 		"邮件发送": "Send Email",

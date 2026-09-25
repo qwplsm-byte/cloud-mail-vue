@@ -45,10 +45,13 @@
               <Icon icon="mdi:robot-outline" :width="17" :height="17" />
             </div>
             <div class="bot-content">
-              <div v-if="msg.loading" class="bot-typing">
-                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                <span class="typing-text">{{ $t('aiThinking') }}</span>
-              </div>
+              <template v-if="msg.loading">
+                <div class="bot-typing">
+                  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                  <span class="typing-text">{{ $t('aiThinking') }}<template v-if="elapsed >= 3"> · {{ elapsed }}s</template></span>
+                </div>
+                <div v-if="elapsed >= 10" class="typing-hint">{{ $t('aiThinkingHint') }}</div>
+              </template>
 
               <template v-else>
                 <div v-if="msg.content" class="bot-reply" :class="msg.error ? 'is-error' : ''">{{ msg.content }}</div>
@@ -132,10 +135,11 @@
 </template>
 
 <script setup>
-import {defineOptions, nextTick, ref} from "vue";
+import {defineOptions, nextTick, onBeforeUnmount, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {ElMessage, ElMessageBox} from "element-plus";
 import {aiAssistantExecute, aiAssistantPlan} from "@/request/ai.js";
+import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
 
 defineOptions({
@@ -144,11 +148,82 @@ defineOptions({
 
 const {t} = i18n.global
 
+const userStore = useUserStore()
+
+//对话记录按用户存到 localStorage, 刷新页面后仍能恢复
+const STORAGE_PREFIX = 'ai_assistant_chat_'
+const MAX_STORED = 40
+
 const scrollRef = ref(null)
 const input = ref('')
 const loading = ref(false)
-const messages = ref([])
-let seed = 0
+const messages = ref(loadMessages())
+const elapsed = ref(0)
+
+let seed = messages.value.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0)
+let timerId = null
+
+function storageKey() {
+  return STORAGE_PREFIX + (userStore.user?.email || 'anonymous')
+}
+
+function loadMessages() {
+  try {
+    const raw = localStorage.getItem(storageKey())
+    const list = raw ? JSON.parse(raw) : []
+
+    if (!Array.isArray(list)) {
+      return []
+    }
+
+    //刷新后不能停留在"进行中"状态
+    return list.map(item => ({
+      ...item,
+      loading: false,
+      status: item.status === 'executing' ? 'pending' : item.status
+    }))
+  } catch (e) {
+    return []
+  }
+}
+
+function saveMessages() {
+  try {
+    const list = messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error}) => ({
+      id, role, content, plan, status, results, error
+    }))
+    localStorage.setItem(storageKey(), JSON.stringify(list))
+  } catch (e) {
+    //忽略写入失败(隐私模式/超出配额)
+  }
+}
+
+watch(messages, saveMessages, {deep: true})
+
+function startTimer() {
+  stopTimer()
+  elapsed.value = 0
+  timerId = setInterval(() => {
+    elapsed.value++
+  }, 1000)
+}
+
+function stopTimer() {
+  if (timerId) {
+    clearInterval(timerId)
+    timerId = null
+  }
+}
+
+onBeforeUnmount(stopTimer)
+
+function errorText(e) {
+  //ECONNABORTED 是前端主动超时, 换成更好理解的中文提示
+  if (e?.code === 'ECONNABORTED' || /timeout|超时/i.test(e?.message || '')) {
+    return t('aiTimeout')
+  }
+  return e?.response?.data?.message || e?.message || t('reqFailErrorMsg')
+}
 
 const presets = [
   {key: 'uncategorized', icon: 'mdi:folder-move-outline', label: 'aiPresetUncategorized', prompt: 'aiPresetUncategorizedPrompt'},
@@ -239,6 +314,7 @@ async function submit(text) {
   const bot = {id: ++seed, role: 'assistant', content: '', loading: true}
   messages.value.push(bot)
   loading.value = true
+  startTimer()
   scrollToBottom()
 
   try {
@@ -250,8 +326,9 @@ async function submit(text) {
   } catch (e) {
     bot.loading = false
     bot.error = true
-    bot.content = e?.message || t('reqFailErrorMsg')
+    bot.content = errorText(e)
   } finally {
+    stopTimer()
     loading.value = false
     scrollToBottom()
   }
@@ -533,6 +610,13 @@ function clearConversation() {
     font-size: 13px;
     color: var(--el-text-color-secondary);
   }
+}
+
+.typing-hint {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--el-text-color-placeholder);
 }
 
 @keyframes ai-blink {

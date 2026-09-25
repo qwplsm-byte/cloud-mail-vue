@@ -68,7 +68,8 @@ const aiService = {
 		return typeof result === 'string' ? result : result?.response || '';
 	},
 
-	async chatWithExternalAI(options, messages, maxTokens = 32) {
+	//timeoutMs > 0 时超过该毫秒数主动中断, 避免慢模型把请求一直挂住
+	async chatWithExternalAI(options, messages, maxTokens = 32, timeoutMs = 0) {
 		let baseUrl = (options.aiBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '');
 		//接口地址漏写协议时自动补全, 避免 fetch 直接抛错
 		if (!/^https?:\/\//i.test(baseUrl)) {
@@ -78,50 +79,70 @@ const aiService = {
 		const model = options.aiModel || 'gpt-4o-mini';
 		const url = `${baseUrl}/chat/completions`;
 
-		let response;
+		const controller = new AbortController();
+		const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
 		try {
-			response = await fetch(url, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${options.aiApiKey}`
-				},
-				body: JSON.stringify({
-					model,
-					messages,
-					temperature: 0,
-					max_tokens: maxTokens
-				})
-			});
-		} catch (e) {
-			throw new Error(this.describeFetchError(e, url, model));
+			let response;
+
+			try {
+				response = await fetch(url, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${options.aiApiKey}`
+					},
+					body: JSON.stringify({
+						model,
+						messages,
+						temperature: 0,
+						max_tokens: maxTokens
+					}),
+					signal: controller.signal
+				});
+			} catch (e) {
+				if (e?.name === 'AbortError') {
+					throw new Error(`AI 接口响应超时 (timeout=${Math.round(timeoutMs / 1000)}s, url=${url}, model=${model})`);
+				}
+				throw new Error(this.describeFetchError(e, url, model));
+			}
+
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(`AI 接口返回 ${response.status} (url=${url}, model=${model}): ${text.slice(0, 200)}`);
+			}
+
+			let data;
+
+			const contentType = response.headers.get('content-type') || '';
+
+			//返回网页(HTML)说明接口地址填错了, 通常是缺少 /v1
+			if (!contentType.includes('json')) {
+				const text = await response.text();
+				throw new Error(`AI 接口返回的不是 JSON (url=${url}, content-type=${contentType}): ${text.slice(0, 120)} —— 请检查接口地址是否缺少 /v1`);
+			}
+
+			try {
+				data = await response.json();
+			} catch (e) {
+				throw new Error(`AI 接口返回非 JSON (url=${url}): ${e?.message || e}`);
+			}
+			const choice = data?.choices?.[0];
+			const message = choice?.message || {};
+			//兼容推理型模型：content 为空时回退 reasoning_content
+			const content = (message.content || message.reasoning_content || choice?.text || '').trim();
+
+			//content 为空通常是推理占满了 max_tokens, 记下 finish_reason 便于排查
+			if (!content) {
+				console.warn(`AI 返回内容为空 (model=${model}, finish_reason=${choice?.finish_reason || '-'}, usage=${JSON.stringify(data?.usage || {})})`);
+			}
+
+			return content;
+		} finally {
+			if (timer) {
+				clearTimeout(timer);
+			}
 		}
-
-		if (!response.ok) {
-			const text = await response.text();
-			throw new Error(`AI 接口返回 ${response.status} (url=${url}, model=${model}): ${text.slice(0, 200)}`);
-		}
-
-		let data;
-
-		const contentType = response.headers.get('content-type') || '';
-
-		//返回网页(HTML)说明接口地址填错了, 通常是缺少 /v1
-		if (!contentType.includes('json')) {
-			const text = await response.text();
-			throw new Error(`AI 接口返回的不是 JSON (url=${url}, content-type=${contentType}): ${text.slice(0, 120)} —— 请检查接口地址是否缺少 /v1`);
-		}
-
-		try {
-			data = await response.json();
-		} catch (e) {
-			throw new Error(`AI 接口返回非 JSON (url=${url}): ${e?.message || e}`);
-		}
-		const choice = data?.choices?.[0];
-		const message = choice?.message || {};
-		//兼容推理型模型：content 为空时回退 reasoning_content
-		return (message.content || message.reasoning_content || choice?.text || '').trim();
 	},
 
 	describeFetchError(e, url, model) {
