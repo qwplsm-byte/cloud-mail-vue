@@ -11,7 +11,13 @@ on:
 jobs:
   Deploy-cloud-mail:
     name: 🏗️ Build and Deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
+    #最后一步删除历史运行记录要调 Actions API, 需要 actions: write
+    #注意: 一旦声明 permissions, 未列出的权限会被重置为 none, 所以必须保留 contents: read 供 checkout 使用
+    permissions:
+      contents: read
+      actions: write
 
     env:
       NAME: ${{ secrets.NAME || vars.NAME || 'cloud-mail' }}
@@ -36,15 +42,15 @@ jobs:
 
     steps:
       - name: 🚚 检出代码仓库 / Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: ⚙ 设置 pnpm / Set up pnpm
-        uses: pnpm/action-setup@v4.1.0
+        uses: pnpm/action-setup@v6.1.0
         with:
           version: 11
 
       - name: ⚙ 设置 Node.js / Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: "pnpm"
@@ -255,7 +261,7 @@ jobs:
           fi
 
       - name: 🗑️ 删除运行记录 / Delete workflow runs
-        uses: GitRML/delete-workflow-runs@main
+        uses: GitRML/delete-workflow-runs@v1.2.2
         continue-on-error: true
         with:
           retain_days: '1'
