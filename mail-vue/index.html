@@ -42,6 +42,8 @@
       }
       root.setAttribute('class', cls)
       root.setAttribute('data-theme', theme)
+      // 首屏就声明配色方案, 避免深色下原生控件/滚动条先按浅色渲染
+      root.style.colorScheme = isDark ? 'dark' : 'light'
 
       var metaTag = document.getElementById('theme-color-meta')
       var isMobile = !window.matchMedia("(pointer: fine) and (hover: hover)").matches
