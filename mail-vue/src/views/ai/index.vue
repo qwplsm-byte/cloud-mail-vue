@@ -135,7 +135,7 @@
 </template>
 
 <script setup>
-import {defineOptions, nextTick, onBeforeUnmount, ref, watch} from "vue";
+import {defineOptions, nextTick, onBeforeUnmount, reactive, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {ElMessage, ElMessageBox} from "element-plus";
 import {aiAssistantExecute, aiAssistantPlan} from "@/request/ai.js";
@@ -311,7 +311,8 @@ async function submit(text) {
   }
 
   messages.value.push({id: ++seed, role: 'user', content: text})
-  const bot = {id: ++seed, role: 'assistant', content: '', loading: true}
+  //必须是响应式对象, 否则请求回来后直接改 bot.xxx 不会触发视图更新和持久化 watch
+  const bot = reactive({id: ++seed, role: 'assistant', content: '', loading: true})
   messages.value.push(bot)
   loading.value = true
   startTimer()
