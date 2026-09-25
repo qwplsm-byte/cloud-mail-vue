@@ -3,12 +3,14 @@
     <div v-if="wallpaper" class="wallpaper">
       <video
           v-if="wallpaperIsVideo"
+          :key="wallpaper"
+          ref="wallpaperVideoRef"
           class="wallpaper-media"
           :src="wallpaper"
-          autoplay
-          muted
+          preload="auto"
           loop
           playsinline
+          @canplay="startWallpaperVideo"
       ></video>
       <div
           v-else
@@ -54,7 +56,7 @@ import writer from '@/layout/write/index.vue'
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
 
-/* 主界面壁纸：图片/动图走背景图，视频用 video 标签静音循环播放 */
+/* 主界面壁纸：图片/动图走背景图，视频用 video 标签循环播放 */
 const wallpaperIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v)$/i.test(settingStore.settings.layoutBackground || ''))
 
 const wallpaper = computed(() => {
@@ -65,10 +67,56 @@ const wallpaper = computed(() => {
   return url.startsWith('http') ? url : '/' + url.replace(/^\/+/, '')
 })
 
+/* 遮罩只用于必要时压暗壁纸提升文字可读性，默认 0 即按原样显示 */
 const maskOpacity = computed(() => {
   const value = Number(settingStore.settings.layoutBackgroundMask)
-  return (Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 45) / 100
+  return (Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0) / 100
 })
+
+const wallpaperVideoRef = ref(null)
+/* 已处理过的 video 元素，避免 canplay 多次触发时重复挂监听 */
+let handledVideoEl = null
+let detachUnmute = null
+
+/*
+ * 带声自动播放基本都会被浏览器拦截，所以先按有声启动；被拦下来再退回静音播放，
+ * 等用户首次交互后补开声音。这样既不强制静音，也不会因为拦截而停在首帧。
+ */
+async function startWallpaperVideo() {
+  const el = wallpaperVideoRef.value
+  if (!el || el === handledVideoEl) return
+  handledVideoEl = el
+
+  if (detachUnmute) {
+    detachUnmute()
+  }
+
+  el.muted = false
+  try {
+    await el.play()
+    return
+  } catch (e) {
+    // 浏览器拒绝了带声自动播放，走静音回退
+  }
+
+  el.muted = true
+  el.play().catch(() => {})
+
+  const unmute = () => {
+    el.muted = false
+    detach()
+  }
+  const detach = () => {
+    document.removeEventListener('pointerdown', unmute, true)
+    document.removeEventListener('keydown', unmute, true)
+    if (detachUnmute === detach) {
+      detachUnmute = null
+    }
+  }
+  document.addEventListener('pointerdown', unmute, true)
+  document.addEventListener('keydown', unmute, true)
+  detachUnmute = detach
+}
 const writerRef = ref({})
 const isMobile = ref(window.innerWidth < 1025)
 const handleResize = () => {
@@ -95,6 +143,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  if (detachUnmute) {
+    detachUnmute()
+  }
 })
 </script>
 
