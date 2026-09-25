@@ -83,50 +83,32 @@ const aiService = {
 		const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
 		try {
-			let response;
+			//推理型模型默认会先生成一大段思考过程, 又慢又容易占满 max_tokens 导致最终答案为空;
+			//先带上关闭思考的参数, 部分接口不认会返回 400, 那就去掉再重试一次
+			let result = await this.requestChat(url, options, model, messages, maxTokens, controller.signal, true);
 
-			try {
-				response = await fetch(url, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'Authorization': `Bearer ${options.aiApiKey}`
-					},
-					body: JSON.stringify({
-						model,
-						messages,
-						temperature: 0,
-						max_tokens: maxTokens
-					}),
-					signal: controller.signal
-				});
-			} catch (e) {
-				if (e?.name === 'AbortError') {
-					throw new Error(`AI 接口响应超时 (timeout=${Math.round(timeoutMs / 1000)}s, url=${url}, model=${model})`);
-				}
-				throw new Error(this.describeFetchError(e, url, model));
+			if (result.status === 400) {
+				console.warn(`AI 接口不接受关闭思考的参数, 去掉后重试 (model=${model}): ${result.text.slice(0, 200)}`);
+				result = await this.requestChat(url, options, model, messages, maxTokens, controller.signal, false);
 			}
 
-			if (!response.ok) {
-				const text = await response.text();
-				throw new Error(`AI 接口返回 ${response.status} (url=${url}, model=${model}): ${text.slice(0, 200)}`);
+			if (!result.ok) {
+				throw new Error(`AI 接口返回 ${result.status} (url=${url}, model=${model}): ${result.text.slice(0, 200)}`);
+			}
+
+			//返回网页(HTML)说明接口地址填错了, 通常是缺少 /v1
+			if (!result.contentType.includes('json')) {
+				throw new Error(`AI 接口返回的不是 JSON (url=${url}, content-type=${result.contentType}): ${result.text.slice(0, 120)} —— 请检查接口地址是否缺少 /v1`);
 			}
 
 			let data;
 
-			const contentType = response.headers.get('content-type') || '';
-
-			//返回网页(HTML)说明接口地址填错了, 通常是缺少 /v1
-			if (!contentType.includes('json')) {
-				const text = await response.text();
-				throw new Error(`AI 接口返回的不是 JSON (url=${url}, content-type=${contentType}): ${text.slice(0, 120)} —— 请检查接口地址是否缺少 /v1`);
-			}
-
 			try {
-				data = await response.json();
+				data = JSON.parse(result.text);
 			} catch (e) {
 				throw new Error(`AI 接口返回非 JSON (url=${url}): ${e?.message || e}`);
 			}
+
 			const choice = data?.choices?.[0];
 			const message = choice?.message || {};
 			//兼容推理型模型：content 为空时回退 reasoning_content
@@ -138,11 +120,60 @@ const aiService = {
 			}
 
 			return content;
+		} catch (e) {
+			if (e?.name === 'AbortError') {
+				throw new Error(`AI 接口响应超时 (timeout=${Math.round(timeoutMs / 1000)}s, url=${url}, model=${model})`);
+			}
+			throw e;
 		} finally {
 			if (timer) {
 				clearTimeout(timer);
 			}
 		}
+	},
+
+	//thinkingOff: 尝试关闭推理模型的思考过程, 让它直接出结果; 不支持的接口会返回 400, 由调用方去掉重试
+	async requestChat(url, options, model, messages, maxTokens, signal, thinkingOff) {
+		const body = {
+			model,
+			messages,
+			temperature: 0,
+			max_tokens: maxTokens
+		};
+
+		if (thinkingOff) {
+			//各家关闭思考的写法不同, 一并带上(DeepSeek/火山/通义/OpenAI 网关等)
+			body.thinking = { type: 'disabled' };
+			body.enable_thinking = false;
+			body.reasoning_effort = 'none';
+		}
+
+		let response;
+
+		try {
+			response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${options.aiApiKey}`
+				},
+				body: JSON.stringify(body),
+				signal
+			});
+		} catch (e) {
+			//AbortError 交给调用方转换成超时提示
+			if (e?.name === 'AbortError') {
+				throw e;
+			}
+			throw new Error(this.describeFetchError(e, url, model));
+		}
+
+		return {
+			ok: response.ok,
+			status: response.status,
+			contentType: response.headers.get('content-type') || '',
+			text: await response.text()
+		};
 	},
 
 	describeFetchError(e, url, model) {
