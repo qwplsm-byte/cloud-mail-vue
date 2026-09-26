@@ -160,11 +160,41 @@
     </el-scrollbar>
 
     <div class="ai-input">
-      <button class="search-toggle" :class="{ 'is-on': webSearch }" :title="$t(webSearch ? 'aiWebSearchOn' : 'aiWebSearchOff')"
-              @click="webSearch = !webSearch">
-        <Icon icon="mdi:web" :width="15" :height="15" />
-        <span>{{ $t('aiWebSearch') }}</span>
-      </button>
+      <div class="search-tools" :class="{ 'is-on': webSearch }">
+        <button class="search-toggle" :title="$t(webSearch ? 'aiWebSearchOn' : 'aiWebSearchOff')"
+                @click="webSearch = !webSearch">
+          <Icon icon="mdi:web" :width="15" :height="15" />
+          <span>{{ $t('aiWebSearch') }}</span>
+        </button>
+        <!-- 搜索来源设置: 多引擎可选, 选 searxng 时可填自定义实例地址 -->
+        <el-popover placement="top-start" :width="272" trigger="click" popper-class="search-set-popover">
+          <template #reference>
+            <button class="search-caret" :title="$t('aiSearchSettings')">
+              <Icon icon="mdi:cog-outline" :width="15" :height="15" />
+            </button>
+          </template>
+
+          <div class="search-set">
+            <div class="set-row">
+              <span class="set-title">{{ $t('aiWebSearch') }}</span>
+              <el-switch v-model="webSearch" size="small" />
+            </div>
+
+            <div class="set-label">{{ $t('aiSearchEngine') }}</div>
+            <el-select v-model="searchEngine" size="small" class="set-select" @change="saveSearchPref">
+              <el-option v-for="item in ENGINE_LIST" :key="item.value" :label="$t(item.label)" :value="item.value"/>
+            </el-select>
+
+            <template v-if="searchEngine === 'searxng'">
+              <div class="set-label">{{ $t('aiSearchEndpoint') }}</div>
+              <el-input v-model="searchEndpoint" size="small" placeholder="https://searx.example.com"
+                        @change="saveSearchPref"/>
+              <div class="set-tip">{{ $t('aiSearchEndpointTip') }}</div>
+            </template>
+            <div v-else class="set-tip">{{ $t('aiSearchEngineTip') }}</div>
+          </div>
+        </el-popover>
+      </div>
       <el-input v-model="input" type="textarea" :rows="1" resize="none" :autosize="{minRows: 1, maxRows: 4}"
                 :placeholder="$t('aiPlaceholder')" @keydown.enter.exact.prevent="onSend" />
       <el-button type="primary" class="send-btn" :disabled="loading || !input.trim()" @click="onSend">
@@ -201,6 +231,46 @@ const messages = ref(loadMessages())
 const elapsed = ref(0)
 //联网搜索开关, 开启后本次提问会先联网检索再作答
 const webSearch = ref(false)
+
+//联网搜索引擎选项: auto 走后端默认链, searxng 需要用户填自定义实例地址
+const ENGINE_LIST = [
+  {value: 'auto', label: 'aiSearchEngineAuto'},
+  {value: 'duckduckgo', label: 'aiSearchEngineDdg'},
+  {value: 'bing', label: 'aiSearchEngineBing'},
+  {value: 'baidu', label: 'aiSearchEngineBaidu'},
+  {value: 'mojeek', label: 'aiSearchEngineMojeek'},
+  {value: 'searxng', label: 'aiSearchEngineCustom'},
+]
+
+//搜索来源是设备级偏好, 与用户无关, 单独存一个 key
+const SEARCH_PREF_KEY = 'ai_search_pref'
+const searchPref = loadSearchPref()
+const searchEngine = ref(searchPref.engine)
+const searchEndpoint = ref(searchPref.endpoint)
+
+function loadSearchPref() {
+  try {
+    const raw = localStorage.getItem(SEARCH_PREF_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    return {
+      engine: ENGINE_LIST.some(item => item.value === data.engine) ? data.engine : 'auto',
+      endpoint: typeof data.endpoint === 'string' ? data.endpoint : ''
+    }
+  } catch (e) {
+    return {engine: 'auto', endpoint: ''}
+  }
+}
+
+function saveSearchPref() {
+  try {
+    localStorage.setItem(SEARCH_PREF_KEY, JSON.stringify({
+      engine: searchEngine.value,
+      endpoint: searchEndpoint.value.trim()
+    }))
+  } catch (e) {
+    //忽略隐私模式/超出配额导致的写入失败
+  }
+}
 
 let seed = messages.value.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0)
 let timerId = null
@@ -430,6 +500,11 @@ async function submit(text) {
   const history = buildHistory()
   const useSearch = webSearch.value
 
+  //顺手落盘一次搜索偏好, 避免用户填了地址没失焦就直接发送
+  if (useSearch) {
+    saveSearchPref()
+  }
+
   messages.value.push({id: ++seed, role: 'user', content: text})
   //必须是响应式对象, 否则请求回来后直接改 bot.xxx 不会触发视图更新和持久化 watch
   const bot = reactive({id: ++seed, role: 'assistant', content: '', loading: true})
@@ -439,7 +514,7 @@ async function submit(text) {
   scrollToBottom()
 
   try {
-    const data = await aiAssistantPlan(text, history, useSearch)
+    const data = await aiAssistantPlan(text, history, useSearch, searchEngine.value, searchEndpoint.value.trim())
     bot.loading = false
     bot.content = data?.reply || ''
     bot.plan = data?.actions || []
@@ -523,6 +598,10 @@ function clearConversation() {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  //兜底: 任何子元素都不该把整页撑出横向滚动条(手机端会被裁断)
+  overflow-x: hidden;
   background: var(--extra-light-fill, transparent);
 }
 
@@ -575,12 +654,23 @@ function clearConversation() {
 .ai-body {
   flex: 1;
   min-height: 0;
+  width: 100%;
+
+  //消息区只允许纵向滚动, 横向一律由内容换行解决
+  :deep(.el-scrollbar__wrap) {
+    overflow-x: hidden;
+  }
 }
 
 .ai-inner {
+  width: 100%;
   max-width: 760px;
   margin: 0 auto;
   padding: 22px 20px 26px;
+  box-sizing: border-box;
+  //overflow-wrap 会继承: 长串(URL/邮箱/密码/连续英文)强制断行, 修复手机端被撑破后裁断
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ai-empty {
@@ -681,6 +771,8 @@ function clearConversation() {
   display: flex;
   gap: 10px;
   margin-bottom: 20px;
+  //flex 子项默认 min-width:auto, 会被长内容顶宽, 这里显式压成 0
+  min-width: 0;
 
   &.user {
     justify-content: flex-end;
@@ -1108,32 +1200,55 @@ function clearConversation() {
     box-shadow: none;
   }
 
-  .search-toggle {
+  //联网搜索: 开关 + 来源设置合成一组, 窄屏也不容易挤爆输入栏
+  .search-tools {
     flex-shrink: 0;
     display: inline-flex;
-    align-items: center;
-    gap: 5px;
+    align-items: stretch;
     height: 38px;
-    padding: 0 12px;
-    border-radius: 10px;
     border: 1px solid var(--el-border-color);
+    border-radius: 10px;
     background: var(--el-bg-color);
-    color: var(--el-text-color-secondary);
-    font-size: 13px;
-    cursor: pointer;
-    transition: border-color .18s ease, color .18s ease, background .18s ease;
-    white-space: nowrap;
+    overflow: hidden;
+    transition: border-color .18s ease, background .18s ease;
 
     &:hover {
       border-color: var(--el-color-primary);
-      color: var(--el-color-primary);
     }
 
-    //开启联网搜索时高亮, 让用户明确知道本次会联网
+    //开启联网搜索时整组高亮, 让用户明确知道本次会联网
     &.is-on {
       border-color: var(--el-color-primary);
-      color: var(--el-color-primary);
       background: var(--el-color-primary-light-9);
+    }
+
+    .search-toggle,
+    .search-caret {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: none;
+      background: transparent;
+      color: var(--el-text-color-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      padding: 0 11px;
+      transition: color .18s ease;
+
+      &:hover {
+        color: var(--el-color-primary);
+      }
+    }
+
+    .search-caret {
+      border-left: 1px solid var(--el-border-color-lighter);
+      padding: 0 8px;
+    }
+
+    &.is-on .search-toggle,
+    &.is-on .search-caret {
+      color: var(--el-color-primary);
     }
   }
 
@@ -1156,14 +1271,60 @@ function clearConversation() {
 
   .ai-input {
     padding: 12px 14px 14px;
+    gap: 8px;
 
     //窄屏只留图标, 给输入框让出空间
-    .search-toggle {
-      padding: 0 10px;
+    .search-tools {
+      .search-toggle {
+        padding: 0 9px;
 
-      span {
-        display: none;
+        span {
+          display: none;
+        }
       }
+
+      .search-caret {
+        padding: 0 7px;
+      }
+    }
+  }
+}
+</style>
+
+<!-- 弹层会被 teleport 到 body 外, 所以这层样式不能加 scoped -->
+<style lang="scss">
+.search-set-popover {
+  .search-set {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    .set-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .set-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    .set-label {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .set-select {
+      width: 100%;
+    }
+
+    .set-tip {
+      font-size: 11.5px;
+      line-height: 1.55;
+      color: var(--el-text-color-placeholder);
     }
   }
 }

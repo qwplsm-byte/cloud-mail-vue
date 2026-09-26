@@ -178,6 +178,10 @@ const handleResize = () => {
 
 .main-view {
   background: transparent;
+  /* grid 子项默认 min-width:auto, 长内容(长链接/连续字符)会把 1fr 轨道顶宽,
+     再被 .glass-stage 的 overflow:hidden 裁掉, 表现为手机端整页被裁断。
+     显式压到 0 后轨道不再溢出, 交回内容自身换行。 */
+  min-width: 0;
 }
 
 

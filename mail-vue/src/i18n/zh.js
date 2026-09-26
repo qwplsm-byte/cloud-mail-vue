@@ -470,7 +470,18 @@ const zh = {
     aiWebSearch: '联网搜索',
     aiWebSearchOn: '已开启联网搜索，本次回答会先联网检索',
     aiWebSearchOff: '开启后本次提问会先联网检索再作答',
+    aiSearchSettings: '搜索来源设置',
     aiSearchSources: '参考来源',
     aiSearchEmpty: '联网搜索暂时没有返回结果，以下是模型自身的回答',
+    aiSearchEngine: '搜索引擎',
+    aiSearchEngineAuto: '自动（依次尝试）',
+    aiSearchEngineDdg: 'DuckDuckGo',
+    aiSearchEngineBing: '必应 Bing',
+    aiSearchEngineBaidu: '百度',
+    aiSearchEngineMojeek: 'Mojeek',
+    aiSearchEngineCustom: '自定义（SearXNG）',
+    aiSearchEndpoint: 'SearXNG 实例地址',
+    aiSearchEndpointTip: '填支持 JSON 输出的实例，如 https://searx.example.com',
+    aiSearchEngineTip: '所选引擎无结果时会自动回退到其它引擎，不需要 Key。',
 }
 export default zh

@@ -469,8 +469,19 @@ const en = {
     aiWebSearch: 'Web search',
     aiWebSearchOn: 'Web search is on — this reply will be based on live results',
     aiWebSearchOff: 'When on, this question is searched on the web first',
+    aiSearchSettings: 'Search source settings',
     aiSearchSources: 'Sources',
     aiSearchEmpty: 'Web search returned no results. Here is the model\'s own answer.',
+    aiSearchEngine: 'Search engine',
+    aiSearchEngineAuto: 'Auto (try in order)',
+    aiSearchEngineDdg: 'DuckDuckGo',
+    aiSearchEngineBing: 'Bing',
+    aiSearchEngineBaidu: 'Baidu',
+    aiSearchEngineMojeek: 'Mojeek',
+    aiSearchEngineCustom: 'Custom (SearXNG)',
+    aiSearchEndpoint: 'SearXNG instance URL',
+    aiSearchEndpointTip: 'Use an instance with JSON enabled, e.g. https://searx.example.com',
+    aiSearchEngineTip: 'If the chosen engine returns nothing it falls back to others. No API key needed.',
 }
 
 export default en
