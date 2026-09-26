@@ -56,6 +56,26 @@
               <template v-else>
                 <div v-if="msg.content" class="bot-reply" :class="msg.error ? 'is-error' : ''">{{ msg.content }}</div>
 
+                <!-- 联网搜索失败时的降级提示 -->
+                <div v-if="msg.searchFailed" class="search-fail">
+                  <Icon icon="mdi:alert-outline" :width="15" :height="15" />
+                  <span>{{ $t('aiSearchEmpty') }}</span>
+                </div>
+
+                <!-- 联网搜索的参考来源 -->
+                <div v-if="msg.sources && msg.sources.length" class="source-card">
+                  <div class="source-head">
+                    <Icon icon="mdi:web" :width="15" :height="15" />
+                    <span>{{ $t('aiSearchSources') }}</span>
+                  </div>
+                  <a v-for="(source, index) in msg.sources" :key="source.url" class="source-item"
+                     :href="source.url" target="_blank" rel="noopener noreferrer">
+                    <span class="source-index">{{ index + 1 }}</span>
+                    <span class="source-title">{{ source.title }}</span>
+                    <Icon class="source-link" icon="mdi:open-in-new" :width="13" :height="13" />
+                  </a>
+                </div>
+
                 <!-- 操作计划 -->
                 <div v-if="msg.plan && msg.plan.length" class="plan-card">
                   <div class="plan-head">
@@ -140,6 +160,11 @@
     </el-scrollbar>
 
     <div class="ai-input">
+      <button class="search-toggle" :class="{ 'is-on': webSearch }" :title="$t(webSearch ? 'aiWebSearchOn' : 'aiWebSearchOff')"
+              @click="webSearch = !webSearch">
+        <Icon icon="mdi:web" :width="15" :height="15" />
+        <span>{{ $t('aiWebSearch') }}</span>
+      </button>
       <el-input v-model="input" type="textarea" :rows="1" resize="none" :autosize="{minRows: 1, maxRows: 4}"
                 :placeholder="$t('aiPlaceholder')" @keydown.enter.exact.prevent="onSend" />
       <el-button type="primary" class="send-btn" :disabled="loading || !input.trim()" @click="onSend">
@@ -174,6 +199,8 @@ const input = ref('')
 const loading = ref(false)
 const messages = ref(loadMessages())
 const elapsed = ref(0)
+//联网搜索开关, 开启后本次提问会先联网检索再作答
+const webSearch = ref(false)
 
 let seed = messages.value.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0)
 let timerId = null
@@ -204,8 +231,8 @@ function loadMessages() {
 
 function saveMessages() {
   try {
-    const list = messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error}) => ({
-      id, role, content, plan, status, results, error
+    const list = messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error, sources, searchFailed}) => ({
+      id, role, content, plan, status, results, error, sources, searchFailed
     }))
     localStorage.setItem(storageKey(), JSON.stringify(list))
   } catch (e) {
@@ -386,10 +413,22 @@ function onSend() {
   submit(text)
 }
 
+//取最近几轮纯文本对话作为上下文, 让普通聊天能记住前文
+function buildHistory() {
+  return messages.value
+    .filter(msg => !msg.loading && msg.content)
+    .slice(-10)
+    .map(msg => ({role: msg.role === 'user' ? 'user' : 'assistant', content: String(msg.content)}))
+}
+
 async function submit(text) {
   if (loading.value) {
     return
   }
+
+  //上下文要在推入本轮消息之前取, 否则会把当前提问重复带进去
+  const history = buildHistory()
+  const useSearch = webSearch.value
 
   messages.value.push({id: ++seed, role: 'user', content: text})
   //必须是响应式对象, 否则请求回来后直接改 bot.xxx 不会触发视图更新和持久化 watch
@@ -400,10 +439,12 @@ async function submit(text) {
   scrollToBottom()
 
   try {
-    const data = await aiAssistantPlan(text)
+    const data = await aiAssistantPlan(text, history, useSearch)
     bot.loading = false
     bot.content = data?.reply || ''
     bot.plan = data?.actions || []
+    bot.sources = data?.sources || []
+    bot.searchFailed = !!data?.searchFailed
     bot.status = bot.plan.length ? 'pending' : 'done'
   } catch (e) {
     bot.loading = false
@@ -688,6 +729,78 @@ function clearConversation() {
 
   &.is-error {
     color: var(--el-color-danger);
+  }
+}
+
+.search-fail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+}
+
+.source-card {
+  margin-top: 10px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 12px;
+  background: var(--el-bg-color);
+  padding: 10px 14px;
+
+  .source-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .source-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--el-text-color-regular);
+    text-decoration: none;
+
+    &:hover .source-title {
+      color: var(--el-color-primary);
+      text-decoration: underline;
+    }
+  }
+
+  .source-index {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+
+  .source-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .source-link {
+    flex-shrink: 0;
+    color: var(--el-text-color-placeholder);
   }
 }
 
@@ -983,10 +1096,45 @@ function clearConversation() {
   border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-bg-color);
 
+  //输入框占据剩余宽度, 两侧的开关与发送按钮固定在两端
+  :deep(.el-textarea) {
+    flex: 1;
+    min-width: 0;
+  }
+
   :deep(.el-textarea__inner) {
     border-radius: 10px;
     padding: 9px 12px;
     box-shadow: none;
+  }
+
+  .search-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid var(--el-border-color);
+    background: var(--el-bg-color);
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color .18s ease, color .18s ease, background .18s ease;
+    white-space: nowrap;
+
+    &:hover {
+      border-color: var(--el-color-primary);
+      color: var(--el-color-primary);
+    }
+
+    //开启联网搜索时高亮, 让用户明确知道本次会联网
+    &.is-on {
+      border-color: var(--el-color-primary);
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+    }
   }
 
   .send-btn {
@@ -1008,6 +1156,15 @@ function clearConversation() {
 
   .ai-input {
     padding: 12px 14px 14px;
+
+    //窄屏只留图标, 给输入框让出空间
+    .search-toggle {
+      padding: 0 10px;
+
+      span {
+        display: none;
+      }
+    }
   }
 }
 </style>

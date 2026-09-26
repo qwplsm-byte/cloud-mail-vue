@@ -408,10 +408,10 @@ const en = {
     clientSecret: 'Client Secret',
     notOwner: 'Base email does not belong to you',
     aiAssistant: 'AI Assistant',
-    aiAssistantDesc: 'Let AI organize your mailbox with natural language',
+    aiAssistantDesc: 'Chat, Q&A and web search — plus mailbox organization',
     aiIntro: 'Let AI take care of your mailbox',
-    aiIntroDesc: 'Describe what you need in one sentence. AI drafts a plan first and only runs it after you confirm.',
-    aiPlaceholder: 'e.g. Delete all promo emails / Organize uncategorized mail',
+    aiIntroDesc: 'It can organize your mailbox and also chat or search the web like a normal AI. Mailbox operations are shown as a plan first and only run after you confirm.',
+    aiPlaceholder: 'e.g. Delete all promo emails / What happened in the news today?',
     aiSend: 'Send',
     aiThinking: 'AI is thinking…',
     aiThinkingHint: 'Waiting for the model to respond. A slower model may take a while, please wait…',
@@ -466,6 +466,11 @@ const en = {
     aiDeleteLimited: 'The delete limit is reached — only this many will be deleted',
     aiDeleteConfirmTitle: 'Confirm deletion',
     aiDeleteConfirm: 'Deletion cannot be undone. Run this delete operation?',
+    aiWebSearch: 'Web search',
+    aiWebSearchOn: 'Web search is on — this reply will be based on live results',
+    aiWebSearchOff: 'When on, this question is searched on the web first',
+    aiSearchSources: 'Sources',
+    aiSearchEmpty: 'Web search returned no results. Here is the model\'s own answer.',
 }
 
 export default en

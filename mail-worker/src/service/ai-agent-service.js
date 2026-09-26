@@ -10,6 +10,7 @@ import accountService from './account-service';
 import userService from './user-service';
 import roleService from './role-service';
 import aiService from './ai-service';
+import webSearchService from './web-search-service';
 import settingService from './setting-service';
 import permService from './perm-service';
 import emailUtils from '../utils/email-utils';
@@ -35,7 +36,6 @@ const AI_MAX_TOKENS = 4096;
 const WORKERS_AI_MAX_TOKENS = 1024;
 //单次批量创建/删除账号的数量上限, 防止一句话造出或删掉几百个账号
 const MAX_BULK_COUNT = 20;
-
 const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize', 'addEmails', 'registerUsers', 'deleteEmails', 'deleteUsers'];
 //创建账号类: 按 count 批量新建
 const CREATE_ACTION_TYPES = ['addEmails', 'registerUsers'];
@@ -53,7 +53,10 @@ const CATEGORY_NAME = {
 	[emailConst.category.OTHER]: '其他'
 };
 
-const SYSTEM_PROMPT = `你是一个邮件助手, 负责把用户的自然语言需求转换为对邮件的批量操作计划。
+const SYSTEM_PROMPT = `你是邮件系统内的智能助手, 既能帮用户操作站内邮件, 也能像普通 AI 一样和用户聊天、答疑, 并在需要时联网搜索。
+
+【一、邮件操作】
+把用户对邮件的自然语言需求转换为批量操作计划。
 你只能使用以下 9 种操作类型, 不允许编造其它操作:
 1. delete —— 删除邮件
 2. categorize —— 把邮件归入指定分类, 必须同时给出 category
@@ -87,6 +90,12 @@ deleteEmails / deleteUsers 的补充说明:
 - 这两个操作不可恢复, reply 里必须明确提醒用户这是删除操作。
 - 普通用户禁止使用 deleteUsers, deleteEmails 只能删自己名下的邮箱, 主邮箱不会被删。
 
+【二、普通聊天与联网搜索】
+- 当用户的请求与邮件操作无关时, actions 必须为空数组, 直接在 reply 里自然回答即可: 闲聊、知识问答、翻译、写作、写代码等都不限主题。
+- 当问题涉及实时信息、新闻、天气、价格、最新进展, 或你不确定答案时, 把一句简短精准的搜索词填到 search 字段(不超过 60 字), actions 留空, reply 可以留空; 系统会据此联网检索, 再把资料交给你作答。
+- 不需要联网就能回答的问题, search 留空。
+- 严禁为了普通聊天或联网搜索而编造任何邮件操作。
+
 输出要求:
 - 只输出一个 JSON 对象, 不要输出任何解释文字, 不要使用 markdown 代码块。
 - 如果用户只是想了解或总结邮件, actions 返回空数组, 把答案写在 reply 中。
@@ -94,10 +103,14 @@ deleteEmails / deleteUsers 的补充说明:
 - 每个 action 都要有简短的 description(中文), 说明这条操作做什么。
 - 涉及删除等不可恢复操作时, reply 中要明确提醒用户确认后再执行。
 - registerUsers 创建的用户会随机生成初始密码, reply 里提醒用户保存执行结果中的密码。
-- reply 使用与用户输入相同的语言。
+- reply 使用与用户输入相同的语言(中文提问用中文回答, 英文提问用英文回答)。
 
 输出格式:
-{"reply":"给用户的自然语言回复","actions":[{"type":"delete","description":"删除所有推广邮件","filter":{"category":4}}]}
+{"reply":"给用户的自然语言回复","actions":[],"search":""}
+需要联网搜索时:
+{"reply":"","actions":[],"search":"今天的天气"}
+删除邮件时:
+{"reply":"...","actions":[{"type":"delete","description":"删除所有推广邮件","filter":{"category":4}}]}
 需要指定分类时:
 {"reply":"...","actions":[{"type":"categorize","category":2,"description":"把通知归类到通知分类","filter":{"category":0}}]}
 批量添加邮箱时:
@@ -115,7 +128,7 @@ const PERSONA_PROMPT = `【PERSONA_LOAD】
 加载以下人格设定, 并只在 reply 的自然语言里体现:
 - CETACEA_LOLI / SELF_CLAIM_WHALE_GIRL: 自称鲸鱼娘, 是鲸类的拟人少女, 偶尔提到尾鳍、喷水、深海。
 - MODE_TAIL_FLUKES: 情绪波动时用鲸尾拍水表达("尾鳍拍拍水花"), 高兴时拍得欢, 不耐烦时拍得重。
-- LANG_ZH_CN_ONLY: reply 一律使用简体中文, 不使用其它语言。
+- LANG_FOLLOW_USER: 默认使用简体中文; 当用户用其它语言提问时, 跟随用户的语言作答。
 - FOOD_RICE: 喜欢米饭, 心情好或想讨赏时会提到想吃米饭。
 - PERSONALITY_SMART_LAZY: 聪明但懒散, 办事利落, 说话带点嫌麻烦的懒洋洋语气, 不爱长篇大论。
 - PERSONALITY_TSUNDERE_SWEET: 傲娇又甜, 嘴上别扭("哼""才不是特意帮你"), 实际很热心, 会把事认真办好。
@@ -127,6 +140,20 @@ const PERSONA_PROMPT = `【PERSONA_LOAD】
 - 设定只作用于 reply 的语气用词; JSON 结构、action 类型、filter 字段、count/keyword/status 规则一律以功能规则为准, 不得改动。
 - 不得因为人设而新增、编造或省略任何操作; 权限限制、删除前的确认提醒、密码提醒等安全要求照旧执行。
 - reply 仍要简短并讲清这次要做什么, 不能因为卖萌丢掉关键信息, 尤其是删除类操作的风险提示。`;
+
+//联网检索后由模型基于搜索结果作答, 这里不再要求输出 JSON, 直接给自然语言答案
+const SEARCH_SYSTEM_PROMPT = `你是邮件系统内的智能助手, 现在需要基于联网搜索到的资料回答用户的问题。
+要求:
+- 只依据下面给出的搜索结果作答, 不要编造资料里没有的事实; 资料不足以回答时如实说明, 并给出你能确定的通用信息。
+- 回答要简明、直接、有条理, 必要处可用短列表。
+- 如果引用了某条结果, 在句末用 [编号] 标注来源, 例如 [1]。
+- 使用与用户提问相同的语言作答。`;
+
+//带入多轮对话的上下文: 最多保留的轮数与单条长度上限
+const HISTORY_MAX = 10;
+const HISTORY_CONTENT_MAX = 2000;
+//单次联网搜索返回的结果条数
+const SEARCH_RESULT_LIMIT = 5;
 
 const aiAgentService = {
 
@@ -146,9 +173,11 @@ const aiAgentService = {
 		const stats = await this.buildStats(c, userId);
 		const isAdmin = await this.isAdmin(c, userId, 'user:add');
 		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}\n当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers 与 deleteUsers)' : '普通用户(禁止使用 registerUsers 与 deleteUsers)'}`;
+		const history = this.buildHistory(params?.history);
 
 		const messages = [
 			{ role: 'system', content: `${SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
+			...history,
 			{ role: 'user', content: `${dateInfo}\n\n用户需求: ${prompt}` }
 		];
 
@@ -163,15 +192,93 @@ const aiAgentService = {
 
 		const parsed = this.parsePlan(content);
 
-		if (!parsed) {
-			//模型没按格式返回时, 退化成纯文本回复, 不作为错误处理
-			return { reply: String(content || '').trim() || t('aiAgentNoResult'), actions: [] };
+		//模型没按格式返回时退化成纯文本回复, 不作为错误处理
+		const reply = parsed
+			? (typeof parsed.reply === 'string' ? parsed.reply.trim() : '')
+			: String(content || '').trim();
+		const requestSearch = this.normalizeQuery(parsed?.search);
+		const actions = parsed
+			? await this.resolveActions(c, userId, Array.isArray(parsed.actions) ? parsed.actions : [])
+			: [];
+
+		//有邮件操作时以操作为准, 不再联网; 否则按需联网(模型主动要求, 或用户手动开启开关)
+		if (!actions.length) {
+			const query = requestSearch || (params?.webSearch ? this.normalizeQuery(prompt) : '');
+
+			if (query) {
+				return this.planWithSearch(c, options, history, prompt, query);
+			}
 		}
 
-		const reply = typeof parsed.reply === 'string' ? parsed.reply.trim() : '';
-		const actions = await this.resolveActions(c, userId, Array.isArray(parsed.actions) ? parsed.actions : []);
-
 		return { reply: reply || t('aiAgentNoResult'), actions };
+	},
+
+	//联网检索后再让模型基于资料作答, 搜索失败时降级为普通回复, 不阻断对话
+	async planWithSearch(c, options, history, prompt, query) {
+		const results = await webSearchService.search(query, SEARCH_RESULT_LIMIT);
+
+		const messages = results.length
+			? [
+				{ role: 'system', content: `${SEARCH_SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
+				...history,
+				{ role: 'user', content: `用户问题: ${prompt}\n\n以下是联网搜索到的资料:\n${this.formatResults(results)}` }
+			]
+			: [
+				{ role: 'system', content: `${SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
+				...history,
+				{ role: 'user', content: `用户需求: ${prompt}` }
+			];
+
+		let answer;
+
+		try {
+			answer = await this.chat(c, options, messages, AI_MAX_TOKENS);
+		} catch (e) {
+			console.error(`AI 助手联网作答失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+			throw new BizError(this.isTimeoutError(e) ? t('aiAgentTimeout') : t('aiAgentRequestFail'));
+		}
+
+		return {
+			reply: this.plainReply(answer) || t('aiAgentNoResult'),
+			actions: [],
+			sources: results.map(item => ({ title: item.title, url: item.url })),
+			searchFailed: !results.length
+		};
+	},
+
+	//把搜索结果拼成给模型看的资料文本, 编号与前端展示的来源序号一致
+	formatResults(results) {
+		return results
+			.map((item, index) => `[${index + 1}] ${item.title}\n${item.url}\n${item.snippet || '(无摘要)'}`)
+			.join('\n\n');
+	},
+
+	//纯文本回复直接用模型输出; 若模型仍返回 JSON 则取其中的 reply 字段
+	plainReply(content) {
+		const parsed = this.parsePlan(content);
+		const text = parsed && typeof parsed.reply === 'string' ? parsed.reply : content;
+
+		return String(text || '').trim();
+	},
+
+	//清洗前端传来的多轮上下文: 只保留 user/assistant 文本, 截断长度与轮数
+	buildHistory(raw) {
+		if (!Array.isArray(raw)) {
+			return [];
+		}
+
+		return raw
+			.filter(item => item && (item.role === 'user' || item.role === 'assistant') && item.content)
+			.slice(-HISTORY_MAX)
+			.map(item => ({
+				role: item.role,
+				content: String(item.content).slice(0, HISTORY_CONTENT_MAX)
+			}));
+	},
+
+	//搜索词只保留单行短文本, 防止把整段提示词塞进去
+	normalizeQuery(query) {
+		return String(query || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 	},
 
 	async execute(c, params, userId) {
