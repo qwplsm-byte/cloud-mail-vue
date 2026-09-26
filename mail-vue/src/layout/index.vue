@@ -1,5 +1,5 @@
 <template>
-  <div class="layout">
+  <div class="layout" :class="{ 'has-wallpaper': wallpaper }">
     <div v-if="wallpaper" class="wallpaper">
       <video
           v-if="wallpaperIsVideo"
@@ -207,6 +207,20 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   background: var(--el-bg-color);
+}
+
+/* 有壁纸时玻璃转「清透」: 去掉模糊与厚底, 只留极薄一层, 让画面按原样透出来 */
+.layout.has-wallpaper {
+  --glass-blur: 0px;
+  --glass-saturate: 100%;
+  --glass-bg: color-mix(in srgb, var(--el-bg-color) 18%, transparent);
+  --glass-bg-strong: color-mix(in srgb, var(--el-bg-color) 30%, transparent);
+  --glass-bg-soft: color-mix(in srgb, var(--el-bg-color) 10%, transparent);
+}
+
+/* 这层淡彩会把画面压灰, 有壁纸时关掉 */
+.layout.has-wallpaper .layout-skin {
+  display: none;
 }
 
 /* 有壁纸时隐藏氛围光，避免和壁纸叠在一起发花 */
