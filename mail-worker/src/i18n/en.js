@@ -75,6 +75,7 @@ const en = {
 	aiAgentExecuteFail: 'Execution failed, please try again later',
 	aiAgentRequestFail: 'AI request failed. Please check the AI endpoint settings.',
 	aiAgentTimeout: 'The AI took too long and the request was aborted. Please retry, or switch to a faster model in System Settings.',
+	aiAgentImageSkipped: '(whisper) The current model cannot read images, so I only answered from your text~',
 	aiAgentNoAddress: 'No available email address could be generated. Please check the domain config and prefix restrictions.',
 	perms: {
 		"邮件": "Emails",

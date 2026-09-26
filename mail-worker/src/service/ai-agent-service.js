@@ -194,13 +194,18 @@ const HISTORY_MAX = 10;
 const HISTORY_CONTENT_MAX = 2000;
 //单次联网搜索返回的结果条数
 const SEARCH_RESULT_LIMIT = 5;
+//对话附件: 最多几个、单张图片 base64 体积上限、单个文本附件最大字符数
+const ATTACH_MAX_COUNT = 3;
+const ATTACH_IMAGE_MAX = 3 * 1024 * 1024;
+const ATTACH_TEXT_MAX = 12000;
 
 const aiAgentService = {
 
 	async plan(c, params, userId) {
 		const prompt = String(params?.prompt || '').trim();
+		const { images, texts } = this.sanitizeAttachments(params?.attachments);
 
-		if (!prompt) {
+		if (!prompt && !images.length && !texts.length) {
 			throw new BizError(t('aiAgentEmptyPrompt'));
 		}
 
@@ -215,38 +220,58 @@ const aiAgentService = {
 		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}\n当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers 与 deleteUsers)' : '普通用户(禁止使用 registerUsers 与 deleteUsers)'}`;
 		const history = this.buildHistory(params?.history);
 
+		//文本附件并进提问文本, 图片走多模态消息
+		const userText = this.appendTextFiles(prompt, texts);
 		const messages = [
 			{ role: 'system', content: `${SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
 			...history,
-			{ role: 'user', content: `${dateInfo}\n\n用户需求: ${prompt}` }
+			{ role: 'user', content: this.buildUserContent(`${dateInfo}\n\n用户需求: ${userText}`, images) }
 		];
 
 		let content;
+		let imageSkipped = false;
 
 		try {
 			content = await this.chat(c, options, messages, AI_MAX_TOKENS);
 		} catch (e) {
-			console.error(`AI 助手规划失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
-			throw new BizError(this.isTimeoutError(e) ? t('aiAgentTimeout') : t('aiAgentRequestFail'));
+			if (!images.length) {
+				throw this.planError(e);
+			}
+
+			//模型不支持图片输入时会直接报错, 去掉图片重试一次, 别让整轮对话失败
+			console.warn(`AI 助手图片输入失败, 改为纯文本重试: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+			imageSkipped = true;
+
+			try {
+				content = await this.chat(c, options, this.dropImages(messages), AI_MAX_TOKENS);
+			} catch (e2) {
+				throw this.planError(e2);
+			}
 		}
 
 		const parsed = this.parsePlan(content);
 
 		//模型没按格式返回时退化成纯文本回复, 不作为错误处理
-		const reply = parsed
+		let reply = parsed
 			? (typeof parsed.reply === 'string' ? parsed.reply.trim() : '')
 			: String(content || '').trim();
+
+		//图片被模型忽略时明确告诉主人, 免得以为是看图得出的结论
+		if (imageSkipped) {
+			reply = `${reply ? `${reply}\n\n` : ''}${t('aiAgentImageSkipped')}`;
+		}
+
 		const requestSearch = this.normalizeQuery(parsed?.search);
 		const actions = parsed
 			? await this.resolveActions(c, userId, Array.isArray(parsed.actions) ? parsed.actions : [])
 			: [];
 
-		//有邮件操作时以操作为准, 不再联网; 否则按需联网(模型主动要求, 或用户手动开启开关)
-		if (!actions.length) {
+		//有邮件操作或带了图片时以当前输入为准, 不再联网; 否则按需联网(模型主动要求, 或用户手动开启开关)
+		if (!actions.length && !images.length) {
 			const query = requestSearch || (params?.webSearch ? this.normalizeQuery(prompt) : '');
 
 			if (query) {
-				return this.planWithSearch(c, options, history, prompt, query, this.searchOptions(params));
+				return this.planWithSearch(c, options, history, userText, query, this.searchOptions(params));
 			}
 		}
 
@@ -331,6 +356,74 @@ const aiAgentService = {
 			engine: String(params?.searchEngine || '').trim().toLowerCase().slice(0, 20),
 			endpoint: String(params?.searchEndpoint || '').trim().slice(0, 300)
 		};
+	},
+
+	//对话附件只认图片(base64)与纯文本, 数量与体积在这里收敛, 避免超大 payload 透传给模型
+	sanitizeAttachments(raw) {
+		const images = [];
+		const texts = [];
+
+		if (!Array.isArray(raw)) {
+			return { images, texts };
+		}
+
+		for (const item of raw.slice(0, ATTACH_MAX_COUNT)) {
+			const name = String(item?.name || '').trim().slice(0, 80);
+
+			if (item?.type === 'image') {
+				const dataUrl = String(item?.dataUrl || '');
+
+				if (/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(dataUrl) && dataUrl.length <= ATTACH_IMAGE_MAX) {
+					images.push({ name: name || 'image', dataUrl });
+				}
+
+				continue;
+			}
+
+			const content = String(item?.content || '').trim().slice(0, ATTACH_TEXT_MAX);
+
+			if (content) {
+				texts.push({ name: name || 'file', content });
+			}
+		}
+
+		return { images, texts };
+	},
+
+	//文本附件当作主人给的资料并进提问文本
+	appendTextFiles(text, texts) {
+		if (!texts.length) {
+			return text;
+		}
+
+		const blocks = texts.map(file => `【附件: ${file.name}】\n${file.content}`).join('\n\n');
+
+		return `${text}\n\n${blocks}`;
+	},
+
+	//有图片时用 OpenAI 多模态格式; 没图片仍返回字符串, 兼容不支持图片的模型
+	buildUserContent(text, images) {
+		if (!images.length) {
+			return text;
+		}
+
+		return [
+			{ type: 'text', text },
+			...images.map(image => ({ type: 'image_url', image_url: { url: image.dataUrl } }))
+		];
+	},
+
+	//把多模态消息还原成纯文本, 供不支持图片的模型重试
+	dropImages(messages) {
+		return messages.map(msg => Array.isArray(msg.content)
+			? { ...msg, content: msg.content.filter(part => part.type === 'text').map(part => part.text).join('\n') }
+			: msg);
+	},
+
+	planError(e) {
+		console.error(`AI 助手规划失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+
+		return new BizError(this.isTimeoutError(e) ? t('aiAgentTimeout') : t('aiAgentRequestFail'));
 	},
 
 	async execute(c, params, userId) {

@@ -83,7 +83,7 @@
         <!-- AI 助手：位于管理之下、个人设置之上 -->
         <el-menu-item @click="router.push({name: 'ai'})" index="ai"
                       :class="route.meta.name === 'ai' ? 'is-active' : ''">
-          <Icon icon="mdi:robot-outline" :width="19" :height="19" />
+          <img class="menu-avatar" :src="whaleAvatar" alt=""/>
           <span class="menu-name">{{$t('aiAssistant')}}</span>
         </el-menu-item>
       </el-menu>
@@ -106,6 +106,8 @@ import router from "@/router/index.js";
 import { useRoute } from "vue-router";
 import {Icon} from "@iconify/vue";
 import {useSettingStore} from "@/store/setting.js";
+//AI 助手改用鲸娘头像, 侧边栏与对话页保持同一形象
+import whaleAvatar from "@/assets/whale-girl.png";
 
 defineProps({
   collapse: { type: Boolean, default: false },
@@ -131,6 +133,16 @@ const route = useRoute();
   border-right: 1px solid var(--aside-border, var(--glass-border));
   box-shadow: var(--aside-shadow, var(--glass-highlight), 6px 0 30px -22px rgba(30, 55, 110, 0.4));
   transition: max-width .32s cubic-bezier(.25, .8, .3, 1), padding .32s cubic-bezier(.25, .8, .3, 1);
+}
+
+/* 侧边栏 AI 图标: 鲸娘头像, 尺寸与其它菜单图标一致 */
+.menu-avatar {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--el-color-primary-light-9);
 }
 
 /* 桌面端折叠为图标栏 */

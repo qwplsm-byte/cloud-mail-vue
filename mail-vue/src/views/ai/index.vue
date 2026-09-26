@@ -2,7 +2,7 @@
   <div class="ai-page">
     <div class="ai-head">
       <div class="head-badge">
-        <Icon icon="mdi:robot-outline" :width="22" :height="22" />
+        <img class="badge-img" :src="whaleAvatar" alt=""/>
       </div>
       <div class="head-text">
         <div class="head-title">{{ $t('aiAssistant') }}</div>
@@ -19,7 +19,7 @@
         <!-- 空状态：介绍 + 预设指令 -->
         <div v-if="!messages.length" class="ai-empty">
           <div class="empty-badge">
-            <Icon icon="mdi:robot-happy-outline" :width="34" :height="34" />
+            <img class="badge-img" :src="whaleAvatar" alt=""/>
           </div>
           <div class="empty-title">{{ $t('aiIntro') }}</div>
           <div class="empty-desc">{{ $t('aiIntroDesc') }}</div>
@@ -37,12 +37,24 @@
         <!-- 对话消息 -->
         <div v-for="msg in messages" :key="msg.id" class="msg-row" :class="msg.role">
           <template v-if="msg.role === 'user'">
-            <div class="user-bubble">{{ msg.content }}</div>
+            <div class="user-bubble">
+              <!-- 本轮上传的附件: 图片给缩略图, 文本文件只显示文件名 -->
+              <div v-if="msg.attachments && msg.attachments.length" class="bubble-attach">
+                <template v-for="file in msg.attachments" :key="file.key">
+                  <img v-if="file.type === 'image' && file.dataUrl" class="bubble-thumb" :src="file.dataUrl" alt=""/>
+                  <span class="bubble-file">
+                    <Icon icon="mdi:file-document-outline" :width="13" :height="13" />
+                    <span class="bubble-file-name">{{ file.name }}</span>
+                  </span>
+                </template>
+              </div>
+              <span v-if="msg.content" class="bubble-text">{{ msg.content }}</span>
+            </div>
           </template>
 
           <template v-else>
             <div class="bot-avatar">
-              <Icon icon="mdi:robot-outline" :width="17" :height="17" />
+              <img class="badge-img" :src="whaleAvatar" alt=""/>
             </div>
             <div class="bot-content">
               <template v-if="msg.loading">
@@ -159,6 +171,18 @@
       </div>
     </el-scrollbar>
 
+    <!-- 已选附件预览: 图片显示缩略图, 文本文件显示文件名, 可逐个移除 -->
+    <div v-if="attachments.length" class="attach-list">
+      <div v-for="(file, index) in attachments" :key="file.key" class="attach-item">
+        <img v-if="file.type === 'image'" class="attach-thumb" :src="file.dataUrl" alt=""/>
+        <Icon v-else icon="mdi:file-document-outline" :width="15" :height="15" />
+        <span class="attach-name">{{ file.name }}</span>
+        <button class="attach-del" :title="$t('aiAttachRemove')" @click="removeAttachment(index)">
+          <Icon icon="mdi:close" :width="13" :height="13" />
+        </button>
+      </div>
+    </div>
+
     <div class="ai-input">
       <div class="search-tools" :class="{ 'is-on': webSearch }">
         <button class="search-toggle" :title="$t(webSearch ? 'aiWebSearchOn' : 'aiWebSearchOff')"
@@ -195,9 +219,16 @@
           </div>
         </el-popover>
       </div>
+      <!-- 附件入口: 支持图片与常见纯文本文件 -->
+      <button class="attach-btn" :title="$t('aiAttach')" :disabled="loading" @click="pickFile">
+        <Icon icon="mdi:paperclip" :width="17" :height="17" />
+      </button>
+      <input ref="fileRef" class="file-input" type="file" multiple
+             accept="image/*,.txt,.md,.markdown,.json,.csv,.log,.yml,.yaml,.ini,.conf,.xml,.html,.css,.js,.ts,.py,.java,.go,.sql,.sh"
+             @change="onFileChange"/>
       <el-input v-model="input" type="textarea" :rows="1" resize="none" :autosize="{minRows: 1, maxRows: 4}"
                 :placeholder="$t('aiPlaceholder')" @keydown.enter.exact.prevent="onSend" />
-      <el-button type="primary" class="send-btn" :disabled="loading || !input.trim()" @click="onSend">
+      <el-button type="primary" class="send-btn" :disabled="loading || (!input.trim() && !attachments.length)" @click="onSend">
         <Icon icon="mdi:send" :width="18" :height="18" />
       </el-button>
     </div>
@@ -211,6 +242,8 @@ import {ElMessage, ElMessageBox} from "element-plus";
 import {aiAssistantExecute, aiAssistantPlan} from "@/request/ai.js";
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
+//AI 助手形象: 侧边栏与对话页共用同一张鲸娘头像
+import whaleAvatar from "@/assets/whale-girl.png";
 
 defineOptions({
   name: 'ai'
@@ -227,6 +260,16 @@ const MAX_STORED = 40
 const scrollRef = ref(null)
 const input = ref('')
 const loading = ref(false)
+const fileRef = ref(null)
+
+//本轮待发送的附件: 图片压缩后转 base64 交给模型看图, 文本文件直接读文本并进提示词
+const attachments = ref([])
+const MAX_ATTACH = 3
+const MAX_ATTACH_BYTES = 8 * 1024 * 1024
+const MAX_IMAGE_EDGE = 1280
+const MAX_TEXT_CHARS = 12000
+//可以当纯文本读的扩展名, 避免把二进制文件读成乱码
+const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'csv', 'log', 'yml', 'yaml', 'ini', 'conf', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'go', 'sql', 'sh']
 const messages = ref(loadMessages())
 const elapsed = ref(0)
 //联网搜索开关, 开启后本次提问会先联网检索再作答
@@ -301,8 +344,10 @@ function loadMessages() {
 
 function saveMessages() {
   try {
-    const list = messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error, sources, searchFailed}) => ({
-      id, role, content, plan, status, results, error, sources, searchFailed
+    const list = messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error, sources, searchFailed, attachments: files}) => ({
+      id, role, content, plan, status, results, error, sources, searchFailed,
+      //附件只留文件名: 图片 base64 落盘会撑爆 localStorage
+      attachments: files ? files.map(({key, type, name}) => ({key, type, name})) : undefined
     }))
     localStorage.setItem(storageKey(), JSON.stringify(list))
   } catch (e) {
@@ -471,16 +516,106 @@ function usePreset(preset) {
   submit(t(preset.prompt))
 }
 
+function pickFile() {
+  fileRef.value?.click()
+}
+
+function removeAttachment(index) {
+  attachments.value.splice(index, 1)
+}
+
+//图片压到最长边 1280 再转 jpeg base64, 控制请求体积
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const image = new Image()
+      image.onload = () => {
+        const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.width, image.height, 1))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        const ctx = canvas.getContext('2d')
+        //透明图铺白底, 否则转 jpeg 后透明区域会变黑
+        ctx.fillStyle = '#fff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
+      }
+      image.onerror = reject
+      image.src = reader.result
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function isTextFile(file) {
+  if (file.type.startsWith('text/')) {
+    return true
+  }
+  if (/^application\/(json|xml|x-yaml|javascript)/.test(file.type)) {
+    return true
+  }
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  return TEXT_EXT.includes(ext)
+}
+
+async function readAttachment(file) {
+  if (file.size > MAX_ATTACH_BYTES) {
+    ElMessage({message: t('aiAttachTooLarge'), type: 'warning', plain: true, grouping: true})
+    return null
+  }
+
+  const key = `${Date.now()}_${file.name}`
+
+  if (file.type.startsWith('image/')) {
+    return {key, type: 'image', name: file.name, dataUrl: await shrinkImage(file)}
+  }
+
+  if (!isTextFile(file)) {
+    ElMessage({message: t('aiAttachUnsupported'), type: 'warning', plain: true, grouping: true})
+    return null
+  }
+
+  return {key, type: 'text', name: file.name, content: (await file.text()).slice(0, MAX_TEXT_CHARS)}
+}
+
+async function onFileChange(e) {
+  const files = Array.from(e.target.files || [])
+  //清空 value, 否则连续选同一个文件不会再触发 change
+  e.target.value = ''
+
+  for (const file of files) {
+    if (attachments.value.length >= MAX_ATTACH) {
+      ElMessage({message: t('aiAttachLimit'), type: 'warning', plain: true, grouping: true})
+      break
+    }
+
+    try {
+      const item = await readAttachment(file)
+      if (item) {
+        attachments.value.push(item)
+      }
+    } catch (err) {
+      ElMessage({message: t('aiAttachFail'), type: 'error', plain: true, grouping: true})
+    }
+  }
+}
+
 function onSend() {
   if (loading.value) {
     return
   }
   const text = input.value.trim()
-  if (!text) {
+  const files = attachments.value.slice()
+  //只传附件不写文字也允许发送
+  if (!text && !files.length) {
     return
   }
   input.value = ''
-  submit(text)
+  attachments.value = []
+  submit(text, files)
 }
 
 //取最近几轮纯文本对话作为上下文, 让普通聊天能记住前文
@@ -491,7 +626,7 @@ function buildHistory() {
     .map(msg => ({role: msg.role === 'user' ? 'user' : 'assistant', content: String(msg.content)}))
 }
 
-async function submit(text) {
+async function submit(text, files = []) {
   if (loading.value) {
     return
   }
@@ -505,7 +640,7 @@ async function submit(text) {
     saveSearchPref()
   }
 
-  messages.value.push({id: ++seed, role: 'user', content: text})
+  messages.value.push({id: ++seed, role: 'user', content: text, attachments: files.length ? files : undefined})
   //必须是响应式对象, 否则请求回来后直接改 bot.xxx 不会触发视图更新和持久化 watch
   const bot = reactive({id: ++seed, role: 'assistant', content: '', loading: true})
   messages.value.push(bot)
@@ -514,7 +649,7 @@ async function submit(text) {
   scrollToBottom()
 
   try {
-    const data = await aiAssistantPlan(text, history, useSearch, searchEngine.value, searchEndpoint.value.trim())
+    const data = await aiAssistantPlan(text, history, useSearch, searchEngine.value, searchEndpoint.value.trim(), files)
     bot.loading = false
     bot.content = data?.reply || ''
     bot.plan = data?.actions || []
@@ -793,6 +928,103 @@ function clearConversation() {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* AI 形象图: 头像容器保持原尺寸, 图片撑满并沿用容器的圆角 */
+.badge-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+/* 用户气泡里的附件 */
+.bubble-attach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.bubble-thumb {
+  display: block;
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 8px;
+}
+
+.bubble-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, .22);
+}
+
+.bubble-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 输入框上方的待发送附件 */
+.attach-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 10px;
+}
+
+.attach-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 5px 6px 5px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-light);
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.attach-thumb {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.attach-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-del {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--el-text-color-secondary);
+  background: transparent;
+
+  &:hover {
+    color: var(--el-color-danger);
+    background: var(--el-color-danger-light-9);
+  }
 }
 
 .bot-avatar {
@@ -1252,6 +1484,36 @@ function clearConversation() {
     }
   }
 
+  //附件按钮与隐藏的文件选择框
+  .attach-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    cursor: pointer;
+    color: var(--el-text-color-regular);
+    background: var(--el-fill-color-light);
+
+    &:hover:not(:disabled) {
+      color: var(--el-color-primary);
+      border-color: var(--el-color-primary);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: .55;
+    }
+  }
+
+  .file-input {
+    display: none;
+  }
+
   .send-btn {
     flex-shrink: 0;
     height: 38px;
@@ -1267,6 +1529,11 @@ function clearConversation() {
 
   .ai-inner {
     padding: 18px 14px 22px;
+  }
+
+  //窄屏左右内边距与输入栏对齐
+  .attach-list {
+    padding: 0 14px 8px;
   }
 
   .ai-input {
