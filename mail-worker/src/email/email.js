@@ -11,6 +11,7 @@ import roleService from '../service/role-service';
 import userService from '../service/user-service';
 import telegramService from '../service/telegram-service';
 import aiService from '../service/ai-service';
+import aiAgentService from '../service/ai-agent-service';
 import webhookService from '../service/webhook-service';
 
 export async function email(message, env, ctx) {
@@ -39,7 +40,9 @@ export async function email(message, env, ctx) {
 			aiCategory,
 			aiBaseUrl,
 			aiApiKey,
-			aiModel
+			aiModel,
+			aiMailStatus,
+			aiMailAddress
 		} = await settingService.query({ env });
 
 		if (receive === settingConst.receive.CLOSE) {
@@ -162,6 +165,22 @@ export async function email(message, env, ctx) {
 
 		emailRow = await emailService.completeReceive({ env }, account ? emailConst.status.RECEIVE : emailConst.status.NOONE, emailRow.emailId);
 
+		//AI 邮件聊天: 寄到鲸娘邮箱的信, 用同一个邮箱账号回一封; 后台执行, 不阻塞收件
+		if (account && aiMailStatus && isAiMailTo(aiMailAddress || env.admin, message.to)) {
+			ctx.waitUntil(
+				aiAgentService.autoReplyMail({ env }, {
+					account,
+					userId: account.userId,
+					emailId: emailRow.emailId,
+					fromEmail: email.from.address,
+					fromName: email.from.name,
+					subject: email.subject,
+					text: email.text || htmlToText(email.html),
+					headers: message.headers
+				}).catch(e => console.error('AI 邮件回复异常: ', e))
+			);
+		}
+
 		//后台异步分类，不阻塞收件
 		if (account) {
 			ctx.waitUntil(
@@ -217,6 +236,35 @@ export async function email(message, env, ctx) {
 		console.error('邮件接收异常: ', e);
 		throw e
 	}
+}
+
+//鲸娘邮箱支持配多个地址(逗号分隔), 命中收件地址或它的子地址都算
+function isAiMailTo(aiMail, to) {
+
+	if (!aiMail) {
+		return false;
+	}
+
+	const list = String(aiMail).split(',').map(item => item.trim().toLowerCase()).filter(Boolean);
+	const target = String(to || '').toLowerCase();
+	const base = String(emailUtils.getBaseEmail(to) || '').toLowerCase();
+
+	return list.includes(target) || (!!base && list.includes(base));
+}
+
+//纯文本正文为空时用 HTML 去标签兜底, 让模型至少有内容可读
+function htmlToText(html) {
+
+	if (!html) {
+		return '';
+	}
+
+	return String(html)
+		.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/&nbsp;/gi, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
 }
 
 function checkBlock(blackSubjectStr, blackContentStr, blackFromStr, email) {

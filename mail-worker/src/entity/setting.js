@@ -71,6 +71,8 @@ export const setting = sqliteTable('setting', {
 	webhookStatus: integer('webhook_status').default(1).notNull(),
 	webhookRetry: integer('webhook_retry').default(0).notNull(),
 	webhookSecret: text('webhook_secret').default('').notNull(),
+	aiMailStatus: integer('ai_mail_status').default(0).notNull(),
+	aiMailAddress: text('ai_mail_address').default('').notNull(),
 	aiBaseUrl: text('ai_base_url').default('').notNull(),
 	aiApiKey: text('ai_api_key').default('').notNull(),
 	aiModel: text('ai_model').default('').notNull()

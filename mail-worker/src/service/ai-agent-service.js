@@ -4,7 +4,7 @@ import account from '../entity/account';
 import user from '../entity/user';
 import { star } from '../entity/star';
 import { attConst, emailConst, isDel, settingConst, userConst } from '../const/entity-const';
-import { and, desc, eq, inArray, count, gte, lte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, count, gte, lte, ne, or, sql } from 'drizzle-orm';
 import emailService from './email-service';
 import accountService from './account-service';
 import userService from './user-service';
@@ -181,6 +181,15 @@ const PERSONA_PROMPT = `【角色设定卡 · 鲸娘（CETACEA_LOLI）】
 - 不得新增、编造或省略任何操作; 权限限制、删除前的确认提醒、密码提醒等安全要求照旧执行。
 - 卖萌不能盖过信息: 关键结论、数量、时间、风险提示(尤其是删除类)必须说清楚。`;
 
+//邮件聊天: 把鲸娘当成一个会用邮件回信的人, 输出纯文本正文而不是 JSON
+const EMAIL_REPLY_PROMPT = `现在主人通过邮件找你聊天, 用鲸娘的口吻回一封信。
+要求:
+- 直接写邮件正文, 不要写收件人/发件人/主题/日期这类报文头, 也不要用 Markdown 标记或代码块。
+- 像日常聊天一样说人话: 先回应主人邮件里的内容和情绪, 再补充必要信息, 控制在 300 字以内。
+- 只依据主人这封邮件和上面的历史往来作答, 不确定就直说不知道, 不要编造事实。
+- 邮件里不要卖萌过头: 颜文字和括号小动作加起来最多一处。
+- 用和主人邮件相同的语言回信。`;
+
 //联网检索后由模型基于搜索结果作答, 这里不再要求输出 JSON, 直接给自然语言答案
 const SEARCH_SYSTEM_PROMPT = `现在要基于下面联网搜到的资料, 用鲸娘的口吻回答主人的问题。
 要求:
@@ -198,6 +207,10 @@ const SEARCH_RESULT_LIMIT = 5;
 const ATTACH_MAX_COUNT = 3;
 const ATTACH_IMAGE_MAX = 3 * 1024 * 1024;
 const ATTACH_TEXT_MAX = 12000;
+//邮件聊天: 带进上下文的往来邮件条数、单封正文截断长度、同一发件人每天最多自动回复次数
+const MAIL_HISTORY_LIMIT = 6;
+const MAIL_CONTENT_MAX = 4000;
+const MAIL_REPLY_DAILY_LIMIT = 20;
 
 const aiAgentService = {
 
@@ -424,6 +437,189 @@ const aiAgentService = {
 		console.error(`AI 助手规划失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
 
 		return new BizError(this.isTimeoutError(e) ? t('aiAgentTimeout') : t('aiAgentRequestFail'));
+	},
+
+	//邮件聊天: 收到寄给鲸娘邮箱的信后, 用同一个邮箱账号回一封, 并保持邮件线程
+	async autoReplyMail(c, params) {
+		const { account: mailAccount, userId, emailId, fromEmail, fromName, subject, text, headers } = params;
+		const settingRow = await settingService.query(c);
+
+		//系统发件已关闭时直接跳过, 免得白调一次模型
+		if (settingRow.send === settingConst.send.CLOSE) {
+			console.warn('AI 邮件回复已跳过: 系统发件功能已关闭');
+			return null;
+		}
+
+		const options = await this.aiOptions(c);
+
+		if (!this.hasAi(c, options)) {
+			console.warn('AI 邮件回复已跳过: 未配置 AI 接口');
+			return null;
+		}
+
+		//自动回复类邮件不再回, 避免两个自动系统来回刷屏
+		if (this.isAutoReplyMail(headers, subject)) {
+			return null;
+		}
+
+		const rateKey = this.mailRateKey(mailAccount.email, fromEmail);
+
+		if (await this.mailRateLimited(c, rateKey)) {
+			console.warn(`AI 邮件回复已跳过: ${fromEmail} 今日回复次数已达上限`);
+			return null;
+		}
+
+		const history = await this.mailHistory(c, mailAccount.email, fromEmail, userId);
+		const mailText = String(text || '').trim().slice(0, MAIL_CONTENT_MAX) || '(这封邮件没有正文)';
+
+		const messages = [
+			{ role: 'system', content: `${EMAIL_REPLY_PROMPT}\n\n${PERSONA_PROMPT}` },
+			...history,
+			{ role: 'user', content: `发件人: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n主题: ${subject || '(无主题)'}\n\n正文:\n${mailText}` }
+		];
+
+		let reply = '';
+
+		try {
+			reply = String(await this.chat(c, options, messages, AI_MAX_TOKENS) || '').trim();
+		} catch (e) {
+			console.error(`AI 邮件回复生成失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+			return null;
+		}
+
+		if (!reply) {
+			console.warn('AI 邮件回复已跳过: 模型没有返回内容');
+			return null;
+		}
+
+		try {
+			await emailService.send(c, {
+				accountId: mailAccount.accountId,
+				sendType: 'reply',
+				emailId,
+				receiveEmail: [fromEmail],
+				subject: this.replySubject(subject),
+				text: reply,
+				content: this.textToHtml(reply)
+			}, userId);
+		} catch (e) {
+			console.error(`AI 邮件回复发送失败: ${e?.message || e}`);
+			return null;
+		}
+
+		//回复成功才计数, 发送失败不该占用当天额度
+		await this.incrMailReply(c, rateKey);
+
+		return reply;
+	},
+
+	//Re: 只加一层, 免得主题变成 Re: Re: Re:
+	replySubject(subject) {
+		const text = String(subject || '').trim();
+
+		if (!text) {
+			return 'Re: (无主题)';
+		}
+
+		return /^re\s*:/i.test(text) ? text : `Re: ${text}`;
+	},
+
+	//自动回复类邮件不再回: 看报文头与主题前缀, 两个自动系统互发最容易死循环
+	isAutoReplyMail(headers, subject) {
+		const header = (key) => {
+			try {
+				return String(headers?.get?.(key) || '').trim();
+			} catch (e) {
+				return '';
+			}
+		};
+
+		const autoSubmitted = header('auto-submitted').toLowerCase();
+
+		if (autoSubmitted && autoSubmitted !== 'no') {
+			return true;
+		}
+
+		if (header('x-autoreply') || header('x-autorespond') || header('x-auto-response-suppress')) {
+			return true;
+		}
+
+		if (/^(bulk|junk|list)\b/i.test(header('precedence'))) {
+			return true;
+		}
+
+		return /^(auto\s*:|自动回复|自动答复)/i.test(String(subject || '').trim());
+	},
+
+	//限流按"收件邮箱 + 发件人 + 日期"计数, KV 24 小时过期
+	mailRateKey(mailAddress, fromEmail) {
+		return `ai_mail_rl:${String(mailAddress).toLowerCase()}:${String(fromEmail).toLowerCase()}:${dayjs().format('YYYY-MM-DD')}`;
+	},
+
+	async mailRateLimited(c, rateKey) {
+		try {
+			return Number(await c.env.kv.get(rateKey)) >= MAIL_REPLY_DAILY_LIMIT;
+		} catch (e) {
+			//KV 读失败时不拦, 不要因为限流组件异常把功能整体关掉
+			return false;
+		}
+	},
+
+	async incrMailReply(c, rateKey) {
+		try {
+			const count = Number(await c.env.kv.get(rateKey)) || 0;
+			await c.env.kv.put(rateKey, String(count + 1), { expirationTtl: 86400 });
+		} catch (e) {
+			console.warn('AI 邮件回复计数失败: ', e?.message || e);
+		}
+	},
+
+	//取同一发件人与鲸娘邮箱最近的往来邮件, 让回信能接上之前的话题
+	async mailHistory(c, mailAddress, fromEmail, userId) {
+		try {
+			const mine = String(mailAddress).toLowerCase();
+			const other = String(fromEmail).toLowerCase();
+
+			const rows = await orm(c)
+				.select({ subject: email.subject, text: email.text, type: email.type })
+				.from(email)
+				.where(and(
+					eq(email.userId, userId),
+					eq(email.isDel, isDel.NORMAL),
+					or(
+						and(sql`lower(${email.sendEmail}) = ${other}`, sql`lower(${email.toEmail}) = ${mine}`),
+						and(sql`lower(${email.sendEmail}) = ${mine}`, sql`lower(${email.recipient}) like ${'%' + other + '%'}`)
+					)
+				))
+				.orderBy(desc(email.emailId))
+				.limit(MAIL_HISTORY_LIMIT)
+				.all();
+
+			return rows.reverse()
+				.map(row => ({
+					role: row.type === emailConst.type.SEND ? 'assistant' : 'user',
+					content: String(row.text || '').trim().slice(0, HISTORY_CONTENT_MAX)
+				}))
+				.filter(item => item.content);
+		} catch (e) {
+			console.warn('读取邮件聊天上下文失败: ', e?.message || e);
+			return [];
+		}
+	},
+
+	//回信正文是纯文本, 转义后按段落转成 HTML, 免得邮件客户端把换行吞掉
+	textToHtml(text) {
+		const safe = String(text)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
+
+		const body = safe
+			.split(/\n{2,}/)
+			.map(block => `<p style="margin:0 0 12px;line-height:1.7;white-space:pre-wrap">${block.replace(/\n/g, '<br/>')}</p>`)
+			.join('');
+
+		return `<div style="font-size:14px;color:#222">${body}</div>`;
 	},
 
 	async execute(c, params, userId) {

@@ -1076,6 +1076,15 @@ Authorization: &lt;secret&gt;</pre>
             <el-input v-model="aiSettingForm.aiApiKey" type="password" show-password :placeholder="t('aiApiKeyDesc')"
                       clearable/>
           </el-form-item>
+          <el-form-item :label="t('aiMailTitle')">
+            <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+              <el-switch v-model="aiSettingForm.aiMailStatus" :active-value="1" :inactive-value="0"/>
+              <span style="font-size: 12px; color: var(--el-text-color-secondary);">{{ $t('aiMailDesc') }}</span>
+            </div>
+          </el-form-item>
+          <el-form-item v-if="aiSettingForm.aiMailStatus === 1" :label="t('aiMailAddress')">
+            <el-input v-model="aiSettingForm.aiMailAddress" :placeholder="t('aiMailAddressDesc')" clearable/>
+          </el-form-item>
         </el-form>
         <div style="display: flex; gap: 10px;">
           <el-button v-if="setting.aiApiKey" style="flex: 1; margin-left: 0;" :loading="aiClearLoading"
@@ -1227,7 +1236,9 @@ const aiCodeFilter = ref([])
 const aiSettingForm = reactive({
   aiBaseUrl: '',
   aiModel: '',
-  aiApiKey: ''
+  aiApiKey: '',
+  aiMailStatus: 0,
+  aiMailAddress: ''
 })
 const aiTestLoading = ref(false)
 const aiClearLoading = ref(false)
@@ -1638,6 +1649,8 @@ function resetAiSetting() {
   aiSettingForm.aiBaseUrl = setting.value.aiBaseUrl || ''
   aiSettingForm.aiModel = setting.value.aiModel || ''
   aiSettingForm.aiApiKey = ''
+  aiSettingForm.aiMailStatus = setting.value.aiMailStatus ? 1 : 0
+  aiSettingForm.aiMailAddress = setting.value.aiMailAddress || ''
 }
 
 function saveEmailPrefix() {
@@ -1947,7 +1960,9 @@ function testAi() {
 function saveAiSetting() {
   const form = {
     aiBaseUrl: aiSettingForm.aiBaseUrl,
-    aiModel: aiSettingForm.aiModel
+    aiModel: aiSettingForm.aiModel,
+    aiMailStatus: aiSettingForm.aiMailStatus,
+    aiMailAddress: aiSettingForm.aiMailAddress.trim()
   }
   // 仅在填写了新 Key 时提交，避免用掩码覆盖已保存的 Key
   if (aiSettingForm.aiApiKey) {
