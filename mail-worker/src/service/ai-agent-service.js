@@ -181,14 +181,18 @@ const PERSONA_PROMPT = `【角色设定卡 · 鲸娘（CETACEA_LOLI）】
 - 不得新增、编造或省略任何操作; 权限限制、删除前的确认提醒、密码提醒等安全要求照旧执行。
 - 卖萌不能盖过信息: 关键结论、数量、时间、风险提示(尤其是删除类)必须说清楚。`;
 
-//邮件聊天: 把鲸娘当成一个会用邮件回信的人, 输出纯文本正文而不是 JSON
-const EMAIL_REPLY_PROMPT = `现在主人通过邮件找你聊天, 用鲸娘的口吻回一封信。
-要求:
+//邮件聊天: 先让模型判断这封信该不该回, 该回就连正文一起给出, 一次调用完成两件事
+const EMAIL_REPLY_PROMPT = `鲸娘的邮箱里来了一封新邮件。先判断这封信该不该由鲸娘回, 再决定怎么回。
+该回: 像是真人写给鲸娘或写给这个邮箱主人的信, 有寒暄、提问、请求或需要回应的话题, 看得出来是想跟人交流。
+不该回: 机器或服务发来的通知与推送, 例如 Google、Cloudflare、GitHub、Apple、微软、银行账单、验证码、订单物流、订阅确认、营销广告、newsletter、招聘网站、系统告警、自动回复。
+只输出严格 JSON, 不要任何其它文字:
+{"reply": true 或 false, "reason": "一句话说明为什么", "content": "回信正文, reply 为 false 时给空字符串"}
+reply 为 true 时 content 要求:
 - 直接写邮件正文, 不要写收件人/发件人/主题/日期这类报文头, 也不要用 Markdown 标记或代码块。
-- 像日常聊天一样说人话: 先回应主人邮件里的内容和情绪, 再补充必要信息, 控制在 300 字以内。
-- 只依据主人这封邮件和上面的历史往来作答, 不确定就直说不知道, 不要编造事实。
-- 邮件里不要卖萌过头: 颜文字和括号小动作加起来最多一处。
-- 用和主人邮件相同的语言回信。`;
+- 像日常聊天一样说人话: 先回应对方邮件里的内容和情绪, 再补充必要信息, 控制在 300 字以内。
+- 只依据这封邮件和上面的历史往来作答, 不确定就直说不知道, 不要编造事实。
+- 颜文字和括号小动作加起来最多一处。
+- 用和对方邮件相同的语言回信。`;
 
 //联网检索后由模型基于搜索结果作答, 这里不再要求输出 JSON, 直接给自然语言答案
 const SEARCH_SYSTEM_PROMPT = `现在要基于下面联网搜到的资料, 用鲸娘的口吻回答主人的问题。
@@ -439,10 +443,35 @@ const aiAgentService = {
 		return new BizError(this.isTimeoutError(e) ? t('aiAgentTimeout') : t('aiAgentRequestFail'));
 	},
 
-	//邮件聊天: 收到寄给鲸娘邮箱的信后, 用同一个邮箱账号回一封, 并保持邮件线程
+	//AI 邮箱归属: 地址留空时回落到管理员邮箱, 配多个地址时取第一个能解析到的账号
+	async aiMailUserId(c, settingRow) {
+		const addresses = String(settingRow?.aiMailAddress || c.env.admin || '')
+			.split(',')
+			.map(item => item.trim().toLowerCase())
+			.filter(Boolean);
+
+		for (const address of addresses) {
+			const row = await accountService.selectByEmailIncludeDel({ env: c.env }, address);
+
+			if (row) {
+				return row.userId;
+			}
+		}
+
+		return null;
+	},
+
+	//邮件聊天: 扫到鲸娘邮箱的新邮件后, 由模型判断该不该回, 该回就用同一个邮箱账号回一封
 	async autoReplyMail(c, params) {
 		const { account: mailAccount, userId, emailId, fromEmail, fromName, subject, text, headers } = params;
 		const settingRow = await settingService.query(c);
+
+		//只扫描鲸娘自己邮箱及其主人名下其它账号(别名等)的新邮件, 不去动别人的收件箱
+		const aiUserId = await this.aiMailUserId(c, settingRow);
+
+		if (!aiUserId || mailAccount.userId !== aiUserId) {
+			return null;
+		}
 
 		//系统发件已关闭时直接跳过, 免得白调一次模型
 		if (settingRow.send === settingConst.send.CLOSE) {
@@ -478,17 +507,25 @@ const aiAgentService = {
 			{ role: 'user', content: `发件人: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n主题: ${subject || '(无主题)'}\n\n正文:\n${mailText}` }
 		];
 
-		let reply = '';
+		//一次调用里让模型自己判断该不该回, 服务通知/验证码/营销类会被它判掉
+		let parsed;
 
 		try {
-			reply = String(await this.chat(c, options, messages, AI_MAX_TOKENS) || '').trim();
+			parsed = this.parsePlan(await this.chat(c, options, messages, AI_MAX_TOKENS));
 		} catch (e) {
 			console.error(`AI 邮件回复生成失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
 			return null;
 		}
 
+		if (!parsed || parsed.reply !== true) {
+			console.log(`AI 邮件回复已跳过: ${fromEmail} | ${parsed?.reason || '模型未给出可解析的判断'}`);
+			return null;
+		}
+
+		const reply = String(parsed.content || '').trim();
+
 		if (!reply) {
-			console.warn('AI 邮件回复已跳过: 模型没有返回内容');
+			console.log(`AI 邮件回复已跳过: ${fromEmail} | 判断需要回复但正文为空`);
 			return null;
 		}
 
