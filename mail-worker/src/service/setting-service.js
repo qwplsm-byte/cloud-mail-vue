@@ -131,6 +131,19 @@ const settingService = {
 			params.webhookUrl = domainUtils.toOssDomain(params.webhookUrl) || '';
 		}
 
+		//切换存储前先确认 R2 已配置可用, 否则不允许开启
+		if (params.useR2Storage !== undefined) {
+			params.useR2Storage = params.useR2Storage ? 1 : 0;
+
+			if (params.useR2Storage) {
+				const ready = await storageService.r2Ready(c);
+
+				if (!ready) {
+					throw new BizError(t('r2NotReady'));
+				}
+			}
+		}
+
 		params.resendTokens = JSON.stringify(resendTokens);
 
 		await orm(c).update(setting).set({ ...params }).returning().get();

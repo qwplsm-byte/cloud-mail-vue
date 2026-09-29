@@ -1085,10 +1085,11 @@ Authorization: &lt;secret&gt;</pre>
           <el-form-item v-if="aiSettingForm.aiMailStatus === 1" :label="t('aiMailAddress')">
             <el-input v-model="aiSettingForm.aiMailAddress" :placeholder="t('aiMailAddressDesc')" clearable/>
           </el-form-item>
-          <el-form-item :label="t('useKvStorage')">
+          <el-form-item :label="t('useR2Storage')">
             <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
-              <el-switch v-model="aiSettingForm.useKvStorage" :active-value="1" :inactive-value="0"/>
-              <span style="font-size: 12px; color: var(--el-text-color-secondary);">{{ $t('useKvStorageDesc') }}</span>
+              <el-switch v-model="aiSettingForm.useR2Storage" :active-value="1" :inactive-value="0"
+                         :disabled="!setting.hasR2"/>
+              <span style="font-size: 12px; color: var(--el-text-color-secondary);">{{ $t('useR2StorageDesc') }}</span>
             </div>
           </el-form-item>
         </el-form>
@@ -1245,7 +1246,7 @@ const aiSettingForm = reactive({
   aiApiKey: '',
   aiMailStatus: 0,
   aiMailAddress: '',
-  useKvStorage: 0
+  useR2Storage: 0
 })
 const aiTestLoading = ref(false)
 const aiClearLoading = ref(false)
@@ -1658,7 +1659,7 @@ function resetAiSetting() {
   aiSettingForm.aiApiKey = ''
   aiSettingForm.aiMailStatus = setting.value.aiMailStatus ? 1 : 0
   aiSettingForm.aiMailAddress = setting.value.aiMailAddress || ''
-  aiSettingForm.useKvStorage = setting.value.useKvStorage ? 1 : 0
+  aiSettingForm.useR2Storage = setting.value.useR2Storage ? 1 : 0
 }
 
 function saveEmailPrefix() {
@@ -1971,7 +1972,7 @@ function saveAiSetting() {
     aiModel: aiSettingForm.aiModel,
     aiMailStatus: aiSettingForm.aiMailStatus,
     aiMailAddress: aiSettingForm.aiMailAddress.trim(),
-    useKvStorage: aiSettingForm.useKvStorage
+    useR2Storage: aiSettingForm.useR2Storage
   }
   // 仅在填写了新 Key 时提交，避免用掩码覆盖已保存的 Key
   if (aiSettingForm.aiApiKey) {

@@ -4,25 +4,46 @@ import setting from '../entity/setting';
 
 const storageService = {
 
-	//轻量键值缓存: 有 R2 就用 R2, 没绑就回落到 KV
+	//轻量键值缓存: 默认全站走 KV, 仅在后台显式开启且 R2 绑定可用时才用 R2
 	async backend(c) {
 
-		let useKvStorage;
+		let useR2Storage;
 
 		try {
 			const row = await settingService.query(c);
-			useKvStorage = row?.useKvStorage;
+			useR2Storage = row?.useR2Storage;
 		} catch (e) {
 			//初始化阶段 setting 还没写入存储, 直接读库拿标记, 避免自我依赖
 			try {
-				const row = await orm(c).select({ useKvStorage: setting.useKvStorage }).from(setting).get();
-				useKvStorage = row?.useKvStorage;
+				const row = await orm(c).select({ useR2Storage: setting.useR2Storage }).from(setting).get();
+				useR2Storage = row?.useR2Storage;
 			} catch (err) {
-				useKvStorage = undefined;
+				useR2Storage = undefined;
 			}
 		}
 
-		return useKvStorage ? 'KV' : 'R2';
+		//未开启或 R2 未绑定, 一律回落 KV
+		if (!useR2Storage || !c.env?.r2) {
+			return 'KV';
+		}
+
+		return 'R2';
+	},
+
+	//R2 是否已配置可用(绑定存在且能正常读写)
+	async r2Ready(c) {
+
+		if (!c.env?.r2) {
+			return false;
+		}
+
+		try {
+			await c.env.r2.put('cache/__health__', '1');
+			await c.env.r2.delete('cache/__health__');
+			return true;
+		} catch (e) {
+			return false;
+		}
 	},
 
 	async get(c, key, type) {
@@ -155,7 +176,8 @@ const storageService = {
 		try {
 			const setting = await settingService.query(c);
 
-			if (setting.useKvStorage) {
+			//只有走 R2 时才需要回收
+			if (!setting.useR2Storage || !c.env?.r2) {
 				return;
 			}
 
