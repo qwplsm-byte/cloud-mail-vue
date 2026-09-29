@@ -1,7 +1,9 @@
+import storageService from './storage-service';
+
 const kvObjService = {
 
 	async putObj(c, key, content, metadata) {
-		await c.env.kv.put(key, content, { metadata: metadata });
+		await storageService.put(c, key, content, { metadata });
 	},
 
 	async deleteObj(c, keys) {
@@ -10,15 +12,12 @@ const kvObjService = {
 			keys = [keys];
 		}
 
-		if (keys.length === 0) {
-			return;
-		}
-
-		await Promise.all(keys.map( key => c.env.kv.delete(key)));
+		await storageService.delete(c, keys);
 	},
 
 	async getObj(c, key) {
-		const obj = await c.env.kv.getWithMetadata(key, { type: "arrayBuffer"});
+		const obj = await storageService.getWithMetadata(c, key, 'arrayBuffer');
+
 		if (!obj.value) {
 			return null;
 		}

@@ -4,6 +4,7 @@ import orm from '../entity/orm';
 import {verifyRecordType} from '../const/entity-const';
 import fileUtils from '../utils/file-utils';
 import r2Service from './r2-service';
+import storageService from './storage-service';
 import constant from '../const/constant';
 import BizError from '../error/biz-error';
 import {t} from '../i18n/i18n'
@@ -17,7 +18,7 @@ const settingService = {
 		const settingRow = await orm(c).select().from(setting).get();
 		settingRow.resendTokens = JSON.parse(settingRow.resendTokens);
 		c.set('setting', settingRow);
-		await c.env.kv.put(KvConst.SETTING, JSON.stringify(settingRow));
+		await storageService.put(c, KvConst.SETTING, settingRow);
 	},
 
 	async query(c) {
@@ -26,7 +27,7 @@ const settingService = {
 			return c.get('setting')
 		}
 
-		const setting = await c.env.kv.get(KvConst.SETTING, { type: 'json' });
+		const setting = await storageService.get(c, KvConst.SETTING, 'json');
 
 		if (!setting) {
 			throw new BizError('数据库未初始化 Database not initialized.');

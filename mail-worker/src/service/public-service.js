@@ -14,6 +14,7 @@ import { isDel, roleConst } from '../const/entity-const';
 import email from '../entity/email';
 import userService from './user-service';
 import KvConst from '../const/kv-const';
+import storageService from './storage-service';
 
 const publicService = {
 
@@ -166,7 +167,7 @@ const publicService = {
 
 		const uuid = uuidv4();
 
-		await c.env.kv.put(KvConst.PUBLIC_KEY, uuid);
+		await storageService.put(c, KvConst.PUBLIC_KEY, uuid);
 
 		return {token: uuid}
 	},

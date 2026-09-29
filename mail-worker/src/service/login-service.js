@@ -5,6 +5,7 @@ import { isDel, settingConst, userConst } from '../const/entity-const';
 import JwtUtils from '../utils/jwt-utils';
 import { v4 as uuidv4 } from 'uuid';
 import KvConst from '../const/kv-const';
+import storageService from './storage-service';
 import constant from '../const/constant';
 import userContext from '../security/user-context';
 import verifyUtils from '../utils/verify-utils';
@@ -228,7 +229,7 @@ const loginService = {
 		const uuid = uuidv4();
 		const jwt = await JwtUtils.generateToken(c,{ userId: userRow.userId, token: uuid });
 
-		let authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userRow.userId, { type: 'json' });
+		let authInfo = await storageService.get(c, KvConst.AUTH_INFO + userRow.userId, 'json');
 
 		if (authInfo && (authInfo.user.email === userRow.email)) {
 
@@ -252,16 +253,16 @@ const loginService = {
 
 		await userService.updateUserInfo(c, userRow.userId);
 
-		await c.env.kv.put(KvConst.AUTH_INFO + userRow.userId, JSON.stringify(authInfo), { expirationTtl: constant.TOKEN_EXPIRE });
+		await storageService.put(c, KvConst.AUTH_INFO + userRow.userId, authInfo, { expirationTtl: constant.TOKEN_EXPIRE });
 		return jwt;
 	},
 
 	async logout(c, userId) {
 		const token =userContext.getToken(c);
-		const authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userId, { type: 'json' });
+		const authInfo = await storageService.get(c, KvConst.AUTH_INFO + userId, 'json');
 		const index = authInfo.tokens.findIndex(item => item === token);
 		authInfo.tokens.splice(index, 1);
-		await c.env.kv.put(KvConst.AUTH_INFO + userId, JSON.stringify(authInfo));
+		await storageService.put(c, KvConst.AUTH_INFO + userId, authInfo);
 	}
 
 };

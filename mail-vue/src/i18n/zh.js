@@ -177,6 +177,8 @@ const zh = {
     aiMailDesc: '开启后，这个邮箱收到的新邮件由 AI 自行判断是否回信；服务通知、验证码、营销类不回',
     aiMailAddress: 'AI 收件邮箱',
     aiMailAddressDesc: '留空则用管理员邮箱；该账号名下的别名邮箱也一并扫描，多个地址用英文逗号分隔',
+    useKvStorage: '使用 KV 存储',
+    useKvStorageDesc: '关闭时用 R2 存缓存与附件（需已绑定 R2 桶），开启则回落到 KV',
     testConnection: '测试连接',
     connectSuccess: '连接成功',
     connectFail: '连接失败',

@@ -44,7 +44,8 @@ const dbInit = {
 		try {
 			await c.env.db.batch([
 				c.env.db.prepare(`ALTER TABLE setting ADD COLUMN ai_mail_status INTEGER NOT NULL DEFAULT 0;`),
-				c.env.db.prepare(`ALTER TABLE setting ADD COLUMN ai_mail_address TEXT NOT NULL DEFAULT '';`)
+				c.env.db.prepare(`ALTER TABLE setting ADD COLUMN ai_mail_address TEXT NOT NULL DEFAULT '';`),
+				c.env.db.prepare(`ALTER TABLE setting ADD COLUMN use_kv_storage INTEGER NOT NULL DEFAULT 0;`)
 			]);
 		} catch (e) {
 			console.warn(`跳过字段：${e.message}`);
