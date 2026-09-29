@@ -4,7 +4,6 @@ import orm from '../entity/orm';
 import {verifyRecordType} from '../const/entity-const';
 import fileUtils from '../utils/file-utils';
 import r2Service from './r2-service';
-import storageService from './storage-service';
 import constant from '../const/constant';
 import BizError from '../error/biz-error';
 import {t} from '../i18n/i18n'
@@ -18,7 +17,7 @@ const settingService = {
 		const settingRow = await orm(c).select().from(setting).get();
 		settingRow.resendTokens = JSON.parse(settingRow.resendTokens);
 		c.set('setting', settingRow);
-		await storageService.put(c, KvConst.SETTING, settingRow);
+		await c.env.kv.put(KvConst.SETTING, JSON.stringify(settingRow));
 	},
 
 	async query(c) {
@@ -27,7 +26,7 @@ const settingService = {
 			return c.get('setting')
 		}
 
-		const setting = await storageService.get(c, KvConst.SETTING, 'json');
+		const setting = await c.env.kv.get(KvConst.SETTING, { type: 'json' });
 
 		if (!setting) {
 			throw new BizError('数据库未初始化 Database not initialized.');
@@ -129,19 +128,6 @@ const settingService = {
 
 		if (params.webhookUrl !== undefined) {
 			params.webhookUrl = domainUtils.toOssDomain(params.webhookUrl) || '';
-		}
-
-		//切换存储前先确认 R2 已配置可用, 否则不允许开启
-		if (params.useR2Storage !== undefined) {
-			params.useR2Storage = params.useR2Storage ? 1 : 0;
-
-			if (params.useR2Storage) {
-				const ready = await storageService.r2Ready(c);
-
-				if (!ready) {
-					throw new BizError(t('r2NotReady'));
-				}
-			}
 		}
 
 		params.resendTokens = JSON.stringify(resendTokens);

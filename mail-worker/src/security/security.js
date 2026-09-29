@@ -4,7 +4,6 @@ import jwtUtils from '../utils/jwt-utils';
 import KvConst from '../const/kv-const';
 import dayjs from 'dayjs';
 import userService from '../service/user-service';
-import storageService from '../service/storage-service';
 import permService from '../service/perm-service';
 import { t } from '../i18n/i18n'
 import app from '../hono/hono';
@@ -105,7 +104,7 @@ app.use('*', async (c, next) => {
 
 	if (path.startsWith('/public')) {
 
-		const userPublicToken = await storageService.get(c, KvConst.PUBLIC_KEY);
+		const userPublicToken = await c.env.kv.get(KvConst.PUBLIC_KEY);
 		const publicToken = c.req.header(constant.TOKEN_HEADER);
 		if (publicToken !== userPublicToken) {
 			throw new BizError(t('publicTokenFail'), 401);
@@ -123,7 +122,7 @@ app.use('*', async (c, next) => {
 	}
 
 	const { userId, token } = result;
-	const authInfo = await storageService.get(c, KvConst.AUTH_INFO + userId, 'json');
+	const authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userId, { type: 'json' });
 
 	if (!authInfo) {
 		throw new BizError(t('authExpired'), 401);
@@ -159,7 +158,7 @@ app.use('*', async (c, next) => {
 	if (!nowTime.isSame(refreshTime)) {
 		authInfo.refreshTime = dayjs().toISOString();
 		await userService.updateUserInfo(c, authInfo.user.userId);
-		await storageService.put(c, KvConst.AUTH_INFO + userId, authInfo, { expirationTtl: constant.TOKEN_EXPIRE });
+		await c.env.kv.put(KvConst.AUTH_INFO + userId, JSON.stringify(authInfo), { expirationTtl: constant.TOKEN_EXPIRE });
 	}
 
 	c.set('user',authInfo.user)

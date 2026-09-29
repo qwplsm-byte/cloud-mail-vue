@@ -6,7 +6,6 @@ import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { emailConst, isDel, roleConst, settingConst, userConst } from '../const/entity-const';
 import kvConst from '../const/kv-const';
 import KvConst from '../const/kv-const';
-import storageService from './storage-service';
 import cryptoUtils from '../utils/crypto-utils';
 import emailService from './email-service';
 import dayjs from 'dayjs';
@@ -101,11 +100,11 @@ const userService = {
 		const { syncDelete } = await settingService.query(c);
 		if (syncDelete === settingConst.syncDelete.OPEN) {
 			await this.physicsDelete(c, { userIds: String(userId) });
-			await storageService.delete(c, kvConst.AUTH_INFO + userId)
+			await c.env.kv.delete(kvConst.AUTH_INFO + userId)
 			return;
 		}
 		await orm(c).update(user).set({ isDel: isDel.DELETE }).where(eq(user.userId, userId)).run();
-		await storageService.delete(c, kvConst.AUTH_INFO + userId)
+		await c.env.kv.delete(kvConst.AUTH_INFO + userId)
 	},
 
 	async physicsDelete(c, params) {
@@ -270,7 +269,7 @@ const userService = {
 
 		const { password, userId } = params;
 		await this.resetPassword(c, { password }, userId);
-		await storageService.delete(c, KvConst.AUTH_INFO + userId);
+		await c.env.kv.delete(KvConst.AUTH_INFO + userId);
 	},
 
 	async setStatus(c, params) {
@@ -284,7 +283,7 @@ const userService = {
 			.run();
 
 		if (status === userConst.status.BAN) {
-			await storageService.delete(c, KvConst.AUTH_INFO + userId);
+			await c.env.kv.delete(KvConst.AUTH_INFO + userId);
 		}
 	},
 

@@ -12,7 +12,6 @@ import roleService from './role-service';
 import aiService from './ai-service';
 import webSearchService from './web-search-service';
 import settingService from './setting-service';
-import storageService from './storage-service';
 import permService from './perm-service';
 import emailUtils from '../utils/email-utils';
 import saltHashUtils from '../utils/crypto-utils';
@@ -596,17 +595,17 @@ const aiAgentService = {
 
 	async mailRateLimited(c, rateKey) {
 		try {
-			return Number(await storageService.get(c, rateKey)) >= MAIL_REPLY_DAILY_LIMIT;
+			return Number(await c.env.kv.get(rateKey)) >= MAIL_REPLY_DAILY_LIMIT;
 		} catch (e) {
-			//读失败时不拦, 不要因为限流组件异常把功能整体关掉
+			//KV 读失败时不拦, 不要因为限流组件异常把功能整体关掉
 			return false;
 		}
 	},
 
 	async incrMailReply(c, rateKey) {
 		try {
-			const count = Number(await storageService.get(c, rateKey)) || 0;
-			await storageService.put(c, rateKey, count + 1, { expirationTtl: 86400 });
+			const count = Number(await c.env.kv.get(rateKey)) || 0;
+			await c.env.kv.put(rateKey, String(count + 1), { expirationTtl: 86400 });
 		} catch (e) {
 			console.warn('AI 邮件回复计数失败: ', e?.message || e);
 		}

@@ -14,11 +14,11 @@ app.onError((err, c) => {
 	}
 
 	if (err.message === `Cannot read properties of undefined (reading 'get')`) {
-		return c.json(result.fail('存储未绑定<br/>Storage not bound',502));
+		return c.json(result.fail('KV数据库未绑定<br/>KV database not bound',502));
 	}
 
 	if (err.message === `Cannot read properties of undefined (reading 'put')`) {
-		return c.json(result.fail('存储未绑定<br/>Storage not bound',502));
+		return c.json(result.fail('KV数据库未绑定<br/>KV database not bound',502));
 	}
 
 	if (err.message === `Cannot read properties of undefined (reading 'prepare')`) {

@@ -177,8 +177,6 @@ const en = {
     aiMailDesc: 'When enabled, the AI decides by itself whether to answer new mail in this mailbox; service notifications, verification codes and marketing are skipped',
     aiMailAddress: 'AI inbox address',
     aiMailAddressDesc: 'Leave empty to use the admin mailbox; aliases of the same account are scanned too. Separate multiple addresses with commas',
-    useR2Storage: 'Use R2 storage',
-    useR2StorageDesc: 'KV is used site-wide by default; R2 can only be enabled when an R2 bucket is bound and verified available',
     testConnection: 'Test Connection',
     connectSuccess: 'Connected',
     connectFail: 'Connection failed',

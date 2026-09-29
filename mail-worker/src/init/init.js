@@ -41,20 +41,13 @@ const dbInit = {
 	},
 
 	async v3_7DB(c) {
-
-		//逐列执行, 避免已有列导致整批回滚, 保证新列一定能补上
-		const columns = [
-			`ALTER TABLE setting ADD COLUMN ai_mail_status INTEGER NOT NULL DEFAULT 0`,
-			`ALTER TABLE setting ADD COLUMN ai_mail_address TEXT NOT NULL DEFAULT ''`,
-			`ALTER TABLE setting ADD COLUMN use_r2_storage INTEGER NOT NULL DEFAULT 0`
-		];
-
-		for (const sql of columns) {
-			try {
-				await c.env.db.prepare(sql + ';').run();
-			} catch (e) {
-				console.warn(`跳过字段：${e.message}`);
-			}
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`ALTER TABLE setting ADD COLUMN ai_mail_status INTEGER NOT NULL DEFAULT 0;`),
+				c.env.db.prepare(`ALTER TABLE setting ADD COLUMN ai_mail_address TEXT NOT NULL DEFAULT '';`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
 		}
 	},
 

@@ -4,7 +4,6 @@ import email from '../entity/email';
 import { desc, count, eq, and, ne, isNotNull } from 'drizzle-orm';
 import { emailConst } from '../const/entity-const';
 import kvConst from '../const/kv-const';
-import storageService from './storage-service';
 import dayjs from 'dayjs';
 import { toUtc } from '../utils/date-uitil';
 const analysisService = {
@@ -15,7 +14,7 @@ const analysisService = {
 		}
 
 		const cacheKey = this.echartsCacheKey(params);
-		const cache = await storageService.get(c, cacheKey, 'json');
+		const cache = await c.env.kv.get(cacheKey, { type: 'json' });
 
 		if (cache) {
 			return cache;
@@ -27,7 +26,7 @@ const analysisService = {
 	async refreshEchartsCacheByKey(c, cacheKey) {
 		const params = this.echartsParamsByCacheKey(cacheKey);
 		const data = await this.queryEcharts(c, params);
-		await storageService.put(c, cacheKey, data);
+		await c.env.kv.put(cacheKey, JSON.stringify(data));
 		return data;
 	},
 
@@ -36,9 +35,9 @@ const analysisService = {
 			return;
 		}
 
-		const keys = await storageService.list(c, kvConst.ANALYSIS_ECHARTS);
+		const { keys } = await c.env.kv.list({ prefix: kvConst.ANALYSIS_ECHARTS });
 
-		await Promise.all(keys.map(key => this.refreshEchartsCacheByKey(c, key)));
+		await Promise.all(keys.map(key => this.refreshEchartsCacheByKey(c, key.name)));
 	},
 
 	async queryEcharts(c, params) {
@@ -80,7 +79,7 @@ const analysisService = {
 			analysisDao.receiveDayCount(c, diffHours),
 			analysisDao.sendDayCount(c, diffHours),
 
-			storageService.get(c, kvConst.SEND_DAY_COUNT + dayjs().format('YYYY-MM-DD')),
+			c.env.kv.get(kvConst.SEND_DAY_COUNT + dayjs().format('YYYY-MM-DD')),
 		]);
 
 
