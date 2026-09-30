@@ -256,14 +256,14 @@ const settingService = {
 	//大文件(如 <5GB 视频)必须绕过 Worker 直传, 否则会被请求体大小限制拦截
 	async presignUpload(c, params = {}) {
 
-		const { filename, contentType } = params;
+		const { filename } = params;
 
 		if (!filename) {
 			throw new BizError(t('r2PresignFileNameEmpty'));
 		}
 
 		const key = constant.LAYOUT_BACKGROUND_PREFIX + crypto.randomUUID().replace(/-/g, '') + fileUtils.getExtFileName(filename);
-		const url = await r2Service.presignPutUrl(c, key, contentType);
+		const url = await r2Service.presignPutUrl(c, key);
 
 		return { url, key };
 	},
