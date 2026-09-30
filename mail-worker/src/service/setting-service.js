@@ -86,6 +86,9 @@ const settingService = {
 
 		settingRow.s3AccessKey = settingRow.s3AccessKey ? `${settingRow.s3AccessKey.slice(0, 12)}******` : null;
 		settingRow.s3SecretKey = settingRow.s3SecretKey ? `${settingRow.s3SecretKey.slice(0, 12)}******` : null;
+		settingRow.r2AccessKey = settingRow.r2AccessKey ? `${settingRow.r2AccessKey.slice(0, 12)}******` : null;
+		settingRow.r2SecretKey = settingRow.r2SecretKey ? `${settingRow.r2SecretKey.slice(0, 12)}******` : null;
+		settingRow.hasR2Presign = !!(settingRow.r2Endpoint && settingRow.r2Bucket && settingRow.r2AccessKey && settingRow.r2SecretKey);
 		settingRow.tgBotToken = settingRow.tgBotToken ? `${settingRow.tgBotToken.slice(0, 20)}******` : null;
 		settingRow.aiApiKey = settingRow.aiApiKey ? `${settingRow.aiApiKey.slice(0, 6)}******` : null;
 		settingRow.hasR2 = !!c.env.r2
@@ -169,6 +172,13 @@ const settingService = {
 
 		await this.deleteBackground(c);
 
+		//直传场景: 前端已把文件直传到对象存储并把裸 key 传回, 无需再转 base64 上传
+		if (this.isRawKey(background, constant.BACKGROUND_PREFIX)) {
+			await orm(c).update(setting).set({ background }).run();
+			await this.refresh(c);
+			return background;
+		}
+
 		if (background && !background.startsWith('http')) {
 
 			const file = fileUtils.base64ToFile(background)
@@ -210,6 +220,13 @@ const settingService = {
 
 		await this.deleteLayoutBackground(c);
 
+		//直传场景: 前端已把文件直传到对象存储并把裸 key 传回, 无需再转 base64 上传
+		if (this.isRawKey(layoutBackground, constant.LAYOUT_BACKGROUND_PREFIX)) {
+			await orm(c).update(setting).set({ layoutBackground }).run();
+			await this.refresh(c);
+			return layoutBackground;
+		}
+
 		if (layoutBackground && !layoutBackground.startsWith('http')) {
 
 			const file = fileUtils.base64ToFile(layoutBackground)
@@ -228,6 +245,27 @@ const settingService = {
 		await orm(c).update(setting).set({ layoutBackground }).run();
 		await this.refresh(c);
 		return layoutBackground;
+	},
+
+	//判断传入的是否为对象存储里已存在的裸 key(直传已完成), 而非 base64 或外链
+	isRawKey(value, prefix) {
+		return typeof value === 'string' && !value.startsWith('http') && value.startsWith(prefix);
+	},
+
+	//为浏览器直传生成预签名地址与最终对象 key
+	//大文件(如 <5GB 视频)必须绕过 Worker 直传, 否则会被请求体大小限制拦截
+	async presignUpload(c, params = {}) {
+
+		const { filename, contentType } = params;
+
+		if (!filename) {
+			throw new BizError(t('r2PresignFileNameEmpty'));
+		}
+
+		const key = constant.LAYOUT_BACKGROUND_PREFIX + crypto.randomUUID().replace(/-/g, '') + fileUtils.getExtFileName(filename);
+		const url = await r2Service.presignPutUrl(c, key, contentType);
+
+		return { url, key };
 	},
 
 	async setBlacklist(c, params) {

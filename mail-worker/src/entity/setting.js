@@ -76,6 +76,10 @@ export const setting = sqliteTable('setting', {
 	aiBaseUrl: text('ai_base_url').default('').notNull(),
 	aiApiKey: text('ai_api_key').default('').notNull(),
 	aiModel: text('ai_model').default('').notNull(),
-	storageType: text('storage_type').default('auto').notNull()
+	storageType: text('storage_type').default('auto').notNull(),
+	r2Endpoint: text('r2_endpoint').default('').notNull(),
+	r2Bucket: text('r2_bucket').default('').notNull(),
+	r2AccessKey: text('r2_access_key').default('').notNull(),
+	r2SecretKey: text('r2_secret_key').default('').notNull()
 });
 export default setting

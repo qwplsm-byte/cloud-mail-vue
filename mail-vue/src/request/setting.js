@@ -24,6 +24,10 @@ export function setLayoutBackground(layoutBackground) {
     return http.put('/setting/setLayoutBackground',{layoutBackground})
 }
 
+export function settingPresignUpload(params) {
+    return http.post('/setting/presignUpload', params)
+}
+
 export function deleteLayoutBackground() {
     return http.delete('/setting/deleteLayoutBackground')
 }

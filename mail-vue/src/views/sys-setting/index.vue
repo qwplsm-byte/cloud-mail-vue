@@ -361,6 +361,20 @@
               </div>
               <div class="setting-item">
                 <div>
+                  <span>{{ $t('r2DirectUpload') }}</span>
+                  <el-tooltip effect="dark" :content="$t('r2DirectUploadDesc')">
+                    <Icon class="warning" icon="fe:warning" width="16" height="16"/>
+                  </el-tooltip>
+                </div>
+                <div class="r2domain">
+                  <el-tag v-if="setting.hasR2Presign" size="small" type="success" style="margin-right: 8px">{{ $t('configured') }}</el-tag>
+                  <el-button class="opt-button" size="small" type="primary" @click="addR2Show = true">
+                    <Icon icon="fluent:settings-48-regular" width="16" height="16"/>
+                  </el-button>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div>
                   <span>{{ $t('storageType') }}</span>
                   <el-tooltip effect="dark" :content="$t('storageTypeDesc')">
                     <Icon class="warning" icon="fe:warning" width="18" height="18"/>
@@ -710,6 +724,13 @@
             fit="cover"
             :src="layoutBackgroundPreview"
         ></el-image>
+        <el-progress
+            v-if="uploadPercent > 0 && uploadPercent < 100"
+            :percentage="uploadPercent"
+            :stroke-width="14"
+            striped
+            striped-flow
+        />
         <div class="cut-button">
           <el-button type="primary" link @click="openLayoutCut" v-if="!layoutLocalUpShow">
             {{ $t('localUpload') }}
@@ -997,6 +1018,19 @@ Authorization: &lt;secret&gt;</pre>
           </div>
         </form>
       </el-dialog>
+      <el-dialog v-model="addR2Show" :title="t('r2DirectUpload')" width="380" @closed="resetAddR2Form">
+        <form @submit.prevent>
+          <el-input class="dialog-input" type="text" placeholder="https://<account_id>.r2.cloudflarestorage.com" v-model="r2Form.endpoint" @keyup.enter="saveR2"/>
+          <el-input class="dialog-input" type="text" placeholder="Bucket" v-model="r2Form.bucket" @keyup.enter="saveR2"/>
+          <el-input class="dialog-input" type="text" :placeholder="setting.r2AccessKey || 'Access Key ID'" v-model="r2Form.accessKey" @keyup.enter="saveR2"/>
+          <el-input style="margin-bottom: 10px" type="text" :placeholder="setting.r2SecretKey || 'Secret Access Key'" v-model="r2Form.secretKey" @keyup.enter="saveR2"/>
+          <div class="r2-desc">{{ t('r2DirectUploadFormDesc') }}</div>
+          <div class="s3-button">
+            <el-button :loading="clearR2Loading" @click="clearR2">{{ t('clear') }}</el-button>
+            <el-button type="primary" :loading="settingLoading && !clearR2Loading" @click="saveR2">{{ t('save') }}</el-button>
+          </div>
+        </form>
+      </el-dialog>
       <el-dialog v-model="emailPrefixShow" :title="t('emailPrefix')"  @closed="resetEmailPrefix"  >
         <div class="email-prefix">
           <div>{{ t('atLeast') }}</div>
@@ -1114,7 +1148,7 @@ Authorization: &lt;secret&gt;</pre>
 
 <script setup>
 import {computed, defineOptions, nextTick, reactive, ref} from "vue";
-import {deleteBackground, deleteLayoutBackground, setBackground, setBlackList, setLayoutBackground, settingQuery, settingSet, testAiConnection} from "@/request/setting.js";
+import {deleteBackground, deleteLayoutBackground, setBackground, setBlackList, setLayoutBackground, settingPresignUpload, settingQuery, settingSet, testAiConnection} from "@/request/setting.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
@@ -1126,7 +1160,7 @@ import {debounce} from 'lodash-es'
 import {isDomain, isEmail, isIpUrl} from "@/utils/verify-utils.js";
 import loading from "@/components/loading/index.vue";
 import {getTextWidth} from "@/utils/text.js";
-import {fileToBase64} from "@/utils/file-utils.js"
+import {fileToBase64, uploadToPresignedUrl} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
 import axios from "axios";
 
@@ -1135,6 +1169,8 @@ defineOptions({
 })
 
 const currentVersion = 'v3.3.0'
+//R2 单次预签名 PUT 的对象上限为 5GB
+const MAX_DIRECT_UPLOAD_SIZE = 5 * 1024 * 1024 * 1024
 const hasUpdate = ref(false)
 let getUpdateErrorCount = 1;
 const {t, locale} = useI18n();
@@ -1182,6 +1218,8 @@ const layoutLocalVideo = ref(false)
 let layoutLocalFile = {}
 const showSetLayoutBackground = ref(false)
 const layoutIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v)$/i.test(setting.value.layoutBackground || ''))
+//直传上传进度(0-100)，0 表示未开始
+const uploadPercent = ref(0)
 let regVerifyCount = ref(1)
 let addVerifyCount = ref(1)
 let backup = '{}'
@@ -1218,6 +1256,15 @@ const s3 = reactive({
   s3AccessKey: '',
   s3SecretKey: '',
   forcePathStyle: 1
+})
+
+const addR2Show = ref(false)
+const clearR2Loading = ref(false)
+const r2Form = reactive({
+  endpoint: '',
+  bucket: '',
+  accessKey: '',
+  secretKey: ''
 })
 
 const noticeForm = reactive({
@@ -1319,6 +1366,7 @@ function getSettings() {
     regVerifyCount.value = setting.value.regVerifyCount
     resetNoticeForm()
     resetAddS3Form()
+    resetAddR2Form()
     resetEmailPrefix()
     resetBlackList()
     resetAiCodeFilter()
@@ -1351,6 +1399,28 @@ function resetAddS3Form() {
   s3.s3AccessKey = ''
   s3.s3SecretKey = ''
   s3.forcePathStyle = setting.value.forcePathStyle
+}
+
+function resetAddR2Form() {
+  r2Form.endpoint = setting.value.r2Endpoint || ''
+  r2Form.bucket = setting.value.r2Bucket || ''
+  r2Form.accessKey = ''
+  r2Form.secretKey = ''
+}
+
+function saveR2() {
+  const form = {
+    r2Endpoint: r2Form.endpoint.trim(),
+    r2Bucket: r2Form.bucket.trim()
+  }
+  if (r2Form.accessKey) form.r2AccessKey = r2Form.accessKey.trim()
+  if (r2Form.secretKey) form.r2SecretKey = r2Form.secretKey.trim()
+  editSetting(form)
+}
+
+function clearR2() {
+  clearR2Loading.value = true
+  editSetting({ r2Endpoint: '', r2Bucket: '', r2AccessKey: '', r2SecretKey: '' })
 }
 
 const resendList = computed(() => {
@@ -1857,6 +1927,7 @@ function closedSetLayoutBackground() {
   layoutBackgroundPreview.value = ''
   layoutLocalUpShow.value = false
   layoutLocalVideo.value = false
+  uploadPercent.value = 0
   layoutBackgroundUrl.value = setting.value.layoutBackground?.startsWith('http') ? setting.value.layoutBackground : ''
 }
 
@@ -1868,6 +1939,15 @@ function openLayoutCut() {
   doc.onchange = (e) => {
     const file = e.target.files[0]
     if (!file) return
+    //单个对象超过 5GB 无法用一次预签名 PUT 完成, 提前拦截避免上传到一半失败
+    if (file.size > MAX_DIRECT_UPLOAD_SIZE) {
+      ElMessage({
+        message: t('fileTooLargeMsg', { size: '5GB' }),
+        type: "warning",
+        plain: true
+      })
+      return
+    }
     layoutLocalFile = file
     layoutLocalVideo.value = file.type.startsWith('video/')
     layoutBackgroundPreview.value = URL.createObjectURL(file)
@@ -1878,6 +1958,12 @@ function openLayoutCut() {
 async function saveLayoutBackground() {
 
   if (settingLoading.value) return
+
+  //本地文件且当前生效存储为 R2: 走预签名直传, 绕过 Worker 请求体大小限制, 支持 GB 级视频
+  if (layoutLocalUpShow.value && setting.value.useStorageType === 'R2') {
+    await uploadLayoutByPresign()
+    return
+  }
 
   let media = ''
 
@@ -1909,6 +1995,45 @@ async function saveLayoutBackground() {
     settingLoading.value = false
   })
 
+}
+
+//直传流程: 申请预签名地址 -> 浏览器直接 PUT 到 R2 -> 回传裸 key 保存
+async function uploadLayoutByPresign() {
+
+  const file = layoutLocalFile
+  if (!file || !file.size) return
+
+  settingLoading.value = true
+  uploadPercent.value = 1
+
+  try {
+    const contentType = file.type || 'application/octet-stream'
+    const { url, key } = await settingPresignUpload({ filename: file.name, contentType })
+
+    await uploadToPresignedUrl(url, file, contentType, (percent) => {
+      uploadPercent.value = percent
+    })
+
+    //直传到对象存储后再写入设置, 保证保存成功的 key 一定指向真实存在的文件
+    await setLayoutBackground(key)
+    setting.value.layoutBackground = key
+    uploadPercent.value = 100
+    showSetLayoutBackground.value = false
+    ElMessage({
+      message: t('saveSuccessMsg'),
+      type: "success",
+      plain: true
+    })
+  } catch (e) {
+    ElMessage({
+      message: e?.message || t('uploadFailMsg'),
+      type: "error",
+      plain: true
+    })
+  } finally {
+    settingLoading.value = false
+    uploadPercent.value = 0
+  }
 }
 
 function delLayoutBackground() {
@@ -2036,6 +2161,8 @@ function change(e) {
   delete settingForm.secretKey
   delete settingForm.s3AccessKey
   delete settingForm.s3SecretKey
+  delete settingForm.r2AccessKey
+  delete settingForm.r2SecretKey
   delete settingForm.tgBotToken
   delete settingForm.resendTokens
   delete settingForm.aiApiKey
@@ -2088,6 +2215,7 @@ function editSetting(settingForm, refreshStatus = true) {
     regVerifyCountShow.value = false
     noticePopupShow.value = false
     addS3Show.value = false
+    addR2Show.value = false
     emailPrefixShow.value = false
     aiCodeFilterShow.value = false
     autoCleanShow.value = false
@@ -2099,6 +2227,7 @@ function editSetting(settingForm, refreshStatus = true) {
   }).finally(() => {
     settingLoading.value = false
     clearS3Loading.value = false
+    clearR2Loading.value = false
   })
 }
 </script>
@@ -2555,6 +2684,13 @@ video.background {
 }
 
 .dialog-input {
+  margin-bottom: 15px;
+}
+
+.r2-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
   margin-bottom: 15px;
 }
 

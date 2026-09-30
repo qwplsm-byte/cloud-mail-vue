@@ -37,6 +37,40 @@ export function base64Size(base64String) {
     return (base64Length * 3) / 4 - padding;
 }
 
+/**
+ * 通过预签名地址把文件直传到对象存储(如 R2)，绕过 Worker 请求体大小限制。
+ * 使用 XHR 以便获取上传进度，适合 GB 级大文件。
+ * @param {string} url 预签名 PUT 地址
+ * @param {File} file 待上传文件
+ * @param {string} contentType 与签名时一致的 Content-Type
+ * @param {(percent:number)=>void} onProgress 上传进度回调(0-100)
+ * @returns {Promise<void>}
+ */
+export function uploadToPresignedUrl(url, file, contentType, onProgress) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', url, true);
+        if (contentType) {
+            xhr.setRequestHeader('Content-Type', contentType);
+        }
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && onProgress) {
+                onProgress(Math.round((e.loaded / e.total) * 100));
+            }
+        };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+            } else {
+                reject(new Error(`上传失败(${xhr.status}): ${(xhr.responseText || '').slice(0, 200)}`));
+            }
+        };
+        xhr.onerror = () => reject(new Error('上传失败，请检查 R2 存储桶的 CORS 配置'));
+        xhr.onabort = () => reject(new Error('上传已取消'));
+        xhr.send(file);
+    });
+}
+
 export function compressImage(file, config = {}) {
     return new Promise((resolve, reject) => {
 

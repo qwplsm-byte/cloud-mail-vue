@@ -1,6 +1,11 @@
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import s3Service from './s3-service';
 import settingService from './setting-service';
 import kvObjService from './kv-obj-service';
+import domainUtils from '../utils/domain-uitls';
+import BizError from '../error/biz-error';
+import { t } from '../i18n/i18n';
 
 const r2Service = {
 
@@ -50,6 +55,42 @@ const r2Service = {
 		} catch (e) {
 			return false;
 		}
+	},
+
+	//生成浏览器直传 R2 的预签名 PUT 地址
+	//大文件(如 5GB 级视频)无法经过 Worker 中转, 必须由浏览器直传对象存储
+	async presignPutUrl(c, key, contentType, expiresIn = 3600) {
+
+		const storageType = await this.storageType(c);
+
+		//直传写入的桶由 R2 绑定读取, 因此仅当生效类型为 R2 时才可用
+		if (storageType !== 'R2') {
+			throw new BizError(t('r2PresignOnlyR2'));
+		}
+
+		const { r2Endpoint, r2Bucket, r2AccessKey, r2SecretKey } = await settingService.query(c);
+
+		if (!r2Endpoint || !r2Bucket || !r2AccessKey || !r2SecretKey) {
+			throw new BizError(t('r2PresignNotConfigured'));
+		}
+
+		const client = new S3Client({
+			region: 'auto',
+			endpoint: domainUtils.toOssDomain(r2Endpoint),
+			forcePathStyle: true,
+			credentials: {
+				accessKeyId: r2AccessKey,
+				secretAccessKey: r2SecretKey
+			}
+		});
+
+		const command = new PutObjectCommand({
+			Bucket: r2Bucket,
+			Key: key,
+			ContentType: contentType || 'application/octet-stream'
+		});
+
+		return await getSignedUrl(client, command, { expiresIn });
 	},
 
 	async putObj(c, key, content, metadata) {

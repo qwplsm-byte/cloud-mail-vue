@@ -33,6 +33,11 @@ app.put('/setting/setLayoutBackground', async (c) => {
 	return c.json(result.ok(key));
 });
 
+app.post('/setting/presignUpload', async (c) => {
+	const data = await settingService.presignUpload(c, await c.req.json());
+	return c.json(result.ok(data));
+});
+
 app.delete('/setting/deleteLayoutBackground', async (c) => {
 	await settingService.deleteLayoutBackground(c);
 	return c.json(result.ok());
