@@ -362,10 +362,20 @@
               <div class="setting-item">
                 <div>
                   <span>{{ $t('storageType') }}</span>
+                  <el-tooltip effect="dark" :content="$t('storageTypeDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
                 </div>
                 <div class="r2domain">
                   <div class="storage-type">
-                    <el-tag>{{ setting.storageType }}</el-tag>
+                    <el-select v-model="storageTypeForm" size="small" style="width: 130px"
+                               @change="saveStorageType">
+                      <el-option label="Auto" value="auto"/>
+                      <el-option label="KV" value="kv"/>
+                      <el-option label="R2" value="r2"/>
+                      <el-option label="S3" value="s3"/>
+                    </el-select>
+                    <el-tag size="small" type="info">{{ setting.useStorageType }}</el-tag>
                   </div>
                 </div>
               </div>
@@ -1156,6 +1166,7 @@ const editTitle = ref('')
 const settingLoading = ref(false)
 const clearS3Loading = ref(false)
 const r2DomainInput = ref('')
+const storageTypeForm = ref('auto')
 const loginOpacity = ref(0)
 const minEmailPrefix = ref(0)
 const emailPrefixFilter = ref([])
@@ -1303,6 +1314,7 @@ function getSettings() {
     backgroundUrl.value = setting.value.background?.startsWith('http') ? setting.value.background : ''
     editTitle.value = setting.value.title
     r2DomainInput.value = setting.value.r2Domain
+    storageTypeForm.value = setting.value.storageType || 'auto'
     addVerifyCount.value = setting.value.addVerifyCount
     regVerifyCount.value = setting.value.regVerifyCount
     resetNoticeForm()
@@ -1920,6 +1932,10 @@ function delLayoutBackground() {
 function saveR2domain() {
   const settingForm = {r2Domain: r2DomainInput.value}
   editSetting(settingForm)
+}
+
+function saveStorageType(value) {
+  editSetting({storageType: value})
 }
 
 function openResendForm() {

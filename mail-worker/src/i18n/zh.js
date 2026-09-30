@@ -50,6 +50,7 @@ const zh = {
 	roleNameExist: '身份名已存在',
 	delDefRole: '默认身份不能删除',
 	notJsonDomain: '环境变量domain必须是JSON类型',
+	r2NotReady: 'R2 对象存储未绑定或不可用，无法切换',
 	noDomainVariable: '环境变量domain不能为空',
 	noOsUpBack: '对象存储未配置不能上传背景',
 	noOsDomainUpBack: '对象存储域名未配置不能上传背景',

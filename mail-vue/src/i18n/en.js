@@ -378,6 +378,7 @@ const en = {
     selectContacts: 'Select',
     forcePathStyleDesc: 'Some self-hosted object storages require path-style access to be enabled',
     storageType: 'Storage Location',
+    storageTypeDesc: 'Auto: pick automatically (S3>R2>KV). Once R2 is selected, uploaded images, videos and GIFs are uploaded directly to R2',
     customDomainDesc: 'Worker custom domain',
     show: 'Show',
     hide: 'Hide',

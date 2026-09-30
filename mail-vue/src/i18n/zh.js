@@ -378,6 +378,7 @@ const zh = {
     selectContacts: '选中',
     forcePathStyleDesc: '路径样式访问，一些自建的对象存储需要打开',
     storageType: '存储类型',
+    storageTypeDesc: 'Auto：自动选择（S3>R2>KV）；选择 R2 后，上传的图片、视频、GIF 将直传至 R2',
     customDomainDesc: 'Worker 自定义域',
     show: '显示',
     hide: '隐藏',

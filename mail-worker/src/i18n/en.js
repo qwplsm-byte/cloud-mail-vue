@@ -50,6 +50,7 @@ const en = {
 	roleNameExist: 'Role name already exists',
 	delDefRole: 'Default role cannot be deleted',
 	notJsonDomain: 'Environment variable "domain" must be in JSON format',
+	r2NotReady: 'R2 object storage is not bound or unavailable, cannot switch',
 	noDomainVariable: 'Environment variable domain cannot be empty',
 	noOsUpBack: 'Cannot upload background: object storage not configured',
 	noOsDomainUpBack: 'Cannot upload background: object storage domain not configured',

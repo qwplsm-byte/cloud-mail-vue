@@ -106,7 +106,8 @@ const settingService = {
 		settingRow.regVerifyOpen = regVerifyOpen
 		settingRow.addVerifyOpen = addVerifyOpen
 
-		settingRow.storageType = await r2Service.storageType(c);
+		settingRow.storageType = settingRow.storageType || 'auto';
+		settingRow.useStorageType = await r2Service.storageType(c);
 
 		return settingRow;
 	},
@@ -128,6 +129,14 @@ const settingService = {
 
 		if (params.webhookUrl !== undefined) {
 			params.webhookUrl = domainUtils.toOssDomain(params.webhookUrl) || '';
+		}
+
+		//切换到 R2 前先确认绑定已配置且可用, 避免保存后上传全挂
+		if (params.storageType === 'r2') {
+			const ready = await r2Service.r2Ready(c);
+			if (!ready) {
+				throw new BizError(t('r2NotReady'));
+			}
 		}
 
 		params.resendTokens = JSON.stringify(resendTokens);

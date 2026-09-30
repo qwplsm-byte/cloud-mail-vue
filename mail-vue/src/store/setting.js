@@ -5,6 +5,7 @@ export const useSettingStore = defineStore('setting', {
         domainList: [],
         settings: {
             r2Domain: '',
+            storageType: 'auto',
             loginOpacity: 1.00,
         },
         lang: '',

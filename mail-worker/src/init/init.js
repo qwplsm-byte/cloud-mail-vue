@@ -36,8 +36,25 @@ const dbInit = {
 		await this.v3_5DB(c);
 		await this.v3_6DB(c);
 		await this.v3_7DB(c);
+		await this.v3_8DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v3_8DB(c) {
+
+		//逐列执行, 避免已有列导致整批回滚
+		const columns = [
+			`ALTER TABLE setting ADD COLUMN storage_type TEXT NOT NULL DEFAULT 'auto'`
+		];
+
+		for (const sql of columns) {
+			try {
+				await c.env.db.prepare(sql + ';').run();
+			} catch (e) {
+				console.warn(`跳过字段：${e.message}`);
+			}
+		}
 	},
 
 	async v3_7DB(c) {

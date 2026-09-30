@@ -75,6 +75,7 @@ export const setting = sqliteTable('setting', {
 	aiMailAddress: text('ai_mail_address').default('').notNull(),
 	aiBaseUrl: text('ai_base_url').default('').notNull(),
 	aiApiKey: text('ai_api_key').default('').notNull(),
-	aiModel: text('ai_model').default('').notNull()
+	aiModel: text('ai_model').default('').notNull(),
+	storageType: text('storage_type').default('auto').notNull()
 });
 export default setting
