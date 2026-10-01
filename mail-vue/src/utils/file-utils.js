@@ -5,6 +5,34 @@ export function getExtName(fileName) {
     return index !== -1 ? fileName.slice(index + 1).toLowerCase() : ''
 }
 
+//可作为背景播放的视频扩展名(部分系统不识别 mkv 的 MIME, 只能靠扩展名判断)
+export const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogv', 'ogg', 'mov', 'm4v', 'mkv']
+
+//文件选择框的 accept: 除 MIME 外显式列出扩展名, 否则 mkv 等会被系统对话框过滤掉
+export const MEDIA_ACCEPT = 'image/*,video/*,.mp4,.webm,.mov,.m4v,.ogv,.ogg,.mkv'
+
+const EXT_CONTENT_TYPE = {
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    m4v: 'video/x-m4v',
+    ogv: 'video/ogg',
+    ogg: 'video/ogg',
+    mkv: 'video/x-matroska'
+}
+
+export function isVideoFile(file) {
+    if (!file) return false
+    if (file.type && file.type.startsWith('video/')) return true
+    return VIDEO_EXTENSIONS.includes(getExtName(file.name || ''))
+}
+
+//mkv 等文件浏览器常给不出 MIME(file.type 为空), 上传时需按扩展名补上, 否则会被存成 octet-stream 而无法播放
+export function resolveContentType(file) {
+    if (file?.type) return file.type
+    return EXT_CONTENT_TYPE[getExtName(file?.name || '')] || 'application/octet-stream'
+}
+
 export function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;

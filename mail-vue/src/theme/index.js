@@ -26,7 +26,7 @@ const CACHE_KEY = 'cm-android-theme'
 const SAMPLE_SIZE = 48
 
 // 判定为视频的扩展名, 视频无法直接读像素, 取色时回退默认种子
-const VIDEO_RE = /\.(mp4|webm|ogv|ogg|mov|m4v)(\?|#|$)/i
+const VIDEO_RE = /\.(mp4|webm|ogv|ogg|mov|m4v|mkv)(\?|#|$)/i
 
 const MOBILE_QUERY = '(pointer: fine) and (hover: hover)'
 

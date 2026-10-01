@@ -57,7 +57,7 @@ const uiStore = useUiStore();
 const settingStore = useSettingStore();
 
 /* 主界面壁纸：图片/动图走背景图，视频用 video 标签循环播放 */
-const wallpaperIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v)$/i.test(settingStore.settings.layoutBackground || ''))
+const wallpaperIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v|mkv)$/i.test(settingStore.settings.layoutBackground || ''))
 
 const wallpaper = computed(() => {
   const key = settingStore.settings.layoutBackground

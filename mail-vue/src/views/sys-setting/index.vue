@@ -1160,7 +1160,7 @@ import {debounce} from 'lodash-es'
 import {isDomain, isEmail, isIpUrl} from "@/utils/verify-utils.js";
 import loading from "@/components/loading/index.vue";
 import {getTextWidth} from "@/utils/text.js";
-import {fileToBase64, uploadToPresignedUrl} from "@/utils/file-utils.js"
+import {fileToBase64, uploadToPresignedUrl, isVideoFile, resolveContentType, MEDIA_ACCEPT} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
 import axios from "axios";
 
@@ -1217,7 +1217,7 @@ const layoutLocalUpShow = ref(false)
 const layoutLocalVideo = ref(false)
 let layoutLocalFile = {}
 const showSetLayoutBackground = ref(false)
-const layoutIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v)$/i.test(setting.value.layoutBackground || ''))
+const layoutIsVideo = computed(() => /\.(mp4|webm|ogv|ogg|mov|m4v|mkv)$/i.test(setting.value.layoutBackground || ''))
 //直传上传进度(0-100)，0 表示未开始
 const uploadPercent = ref(0)
 let regVerifyCount = ref(1)
@@ -1934,7 +1934,7 @@ function closedSetLayoutBackground() {
 function openLayoutCut() {
   const doc = document.createElement('input')
   doc.setAttribute('type', 'file')
-  doc.setAttribute('accept', 'image/*,video/*')
+  doc.setAttribute('accept', MEDIA_ACCEPT)
   doc.click()
   doc.onchange = (e) => {
     const file = e.target.files[0]
@@ -1949,7 +1949,7 @@ function openLayoutCut() {
       return
     }
     layoutLocalFile = file
-    layoutLocalVideo.value = file.type.startsWith('video/')
+    layoutLocalVideo.value = isVideoFile(file)
     layoutBackgroundPreview.value = URL.createObjectURL(file)
     layoutLocalUpShow.value = true
   }
@@ -2007,7 +2007,7 @@ async function uploadLayoutByPresign() {
   uploadPercent.value = 1
 
   try {
-    const contentType = file.type || 'application/octet-stream'
+    const contentType = resolveContentType(file)
     const { url, key } = await settingPresignUpload({ filename: file.name, contentType })
 
     await uploadToPresignedUrl(url, file, contentType, (percent) => {
