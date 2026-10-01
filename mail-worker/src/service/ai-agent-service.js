@@ -36,13 +36,64 @@ const AI_MAX_TOKENS = 4096;
 const WORKERS_AI_MAX_TOKENS = 1024;
 //单次批量创建/删除账号的数量上限, 防止一句话造出或删掉几百个账号
 const MAX_BULK_COUNT = 20;
-const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize', 'addEmails', 'registerUsers', 'deleteEmails', 'deleteUsers'];
+const ACTION_TYPES = ['delete', 'categorize', 'markRead', 'star', 'autoCategorize', 'addEmails', 'registerUsers', 'deleteEmails', 'deleteUsers', 'sendMail'];
 //创建账号类: 按 count 批量新建
 const CREATE_ACTION_TYPES = ['addEmails', 'registerUsers'];
 //删除账号类: 按关键词/状态/数量挑出目标后删除
 const DELETE_TARGET_TYPES = ['deleteEmails', 'deleteUsers'];
 //以上都不看邮件筛选, 统一按"目标数量"处理
 const TARGET_ACTION_TYPES = [...CREATE_ACTION_TYPES, ...DELETE_TARGET_TYPES];
+
+//主动发信: 单封邮件的收件人数量与主题/正文长度上限
+const SEND_MAIL_TYPE = 'sendMail';
+const SEND_MAIL_MAX_RECIPIENTS = 3;
+const SEND_MAIL_SUBJECT_MAX = 200;
+const SEND_MAIL_CONTENT_MAX = 6000;
+//主动发信按发件账号+日期在 KV 计数, 防止被当成群发通道
+const SEND_MAIL_DAILY_LIMIT = 20;
+//审查凭证的有效期: 用户在确认卡片上停留久了也不至于失效
+const SEND_TICKET_TTL = 2 * 60 * 60;
+
+//必须主人在对话里明确让她发信才允许出现发信动作, 否则一律丢弃
+const SEND_INTENT_PATTERN = /(发(个|封|一封|一条)?\s*(邮件|信|email|mail|通知|消息|提醒|邀请|问候|祝贺|慰问|道歉|感谢)|发送(个|封|一封|一条)?\s*(邮件|信|通知|消息)|寄(个|封|一封)?\s*(邮件|信)|写(个|封|一封)?\s*(邮件|信)|(代|帮|替)(我|你|鲸娘)?\s*发(个|封|一封)?\s*(邮件|信|通知|消息)|回(一封|个)?\s*信|回复(这封|一下)?\s*(邮件|信)|send\s+(an?\s+)?(email|mail)|write\s+(an?\s+)?(email|mail)|reply\s+to\s+(the\s+)?(email|mail))/i;
+
+//用户在对话里说清了发信目的的说法, 用于判定"明确要求"
+const SEND_PURPOSE_PATTERN = /(咨询|询问|请教|问一下|了解|通知|告知|提醒|问候|打招呼|致谢|感谢|道歉|邀请|约|申请|反馈|投诉|建议|合作|洽谈|联系|商务|求职|应聘|推荐|介绍|祝贺|慰问|催|跟(进|踪)|确认|report|inquire|notify|greet|thank|invite|apply|feedback|complain|cooperat)/i;
+
+//免费/个人邮箱域名, 命中即认定收件人是个人
+const PERSONAL_MAIL_DOMAINS = [
+	'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'outlook.jp',
+	'yahoo.com', 'yahoo.co.jp', 'ymail.com', 'icloud.com', 'me.com', 'mac.com',
+	'proton.me', 'protonmail.com', 'gmx.com', 'zoho.com', 'aol.com', 'mail.com', 'yandex.com',
+	'qq.com', 'foxmail.com', '163.com', '126.com', 'yeah.net', 'sina.com', 'sina.cn',
+	'sohu.com', '139.com', '189.cn', '21cn.com', 'tom.com', 'aliyun.com'
+];
+
+//机构/官方邮箱的常见角色前缀: support@、noreply@ 这类都是发给机构而不是某个具体的人
+const ORG_LOCAL_PATTERN = /^(support|contact|info|admin|administrator|service|services|help|helpdesk|customer|customercare|sales|marketing|press|media|legal|privacy|abuse|postmaster|webmaster|noreply|no-?reply|donotreply|billing|invoice|payment|accounts?|hr|jobs|careers?|recruit|security|office|team|hello|feedback|inquiry|enquiry|business|partner|partnerships?|official|news|alert|notify|notifications?|system)/i;
+
+//知名机构/公共组织的域名关键词, 命中即视为机构邮箱
+const ORG_DOMAIN_PATTERN = /(^|\.)(google|youtube|microsoft|apple|amazon|meta|facebook|instagram|whatsapp|twitter|linkedin|netflix|adobe|oracle|ibm|intel|nvidia|amd|samsung|huawei|xiaomi|tencent|alibaba|taobao|baidu|bytedance|cloudflare|github|gitlab|atlassian|salesforce|paypal|visa|mastercard|gov|edu)(\.|$)/i;
+
+//一次性/临时邮箱域名: 发过去也没有意义, 直接拦掉
+const DISPOSABLE_DOMAIN_PATTERN = /(^|\.)(mailinator|guerrillamail|10minutemail|tempmail|throwawaymail|yopmail|sharklasers|trashmail)\./i;
+
+//发信前的安全审查: 收件人身份 + 内容合规都要过一遍
+const SEND_REVIEW_PROMPT = `你是邮件系统的发信安全审查员, 负责在"AI 替主人发信"之前做最后一道检查。
+根据给出的收件人、主题、正文和主人的原话, 判断这封邮件能不能发。
+
+只输出严格 JSON, 不要输出任何其它文字:
+{"allow":true 或 false, "recipientType":"personal", "explicitIntent":true 或 false, "reason":"一句话中文说明"}
+
+判定规则:
+- recipientType: 收件人指向某个具体的自然人(个人常用邮箱、个人名字命名的邮箱)填 personal; 指向机构/公司/官方/客服/团队/组织等公共邮箱填 organization; 实在判断不了填 unknown。
+- explicitIntent: 主人原话里是否明确说清了发信的目的与性质。例如明确要求发一封咨询、通知、问候、合作、致谢、反馈邮件就算 true; 只说了"给这个邮箱发封邮件"却没说要发什么内容、什么目的, 就算 false。
+- allow 必须为 false 的情形:
+  · 主题或正文涉及垃圾营销群发、诈骗或钓鱼、冒充他人身份、违法内容、辱骂骚扰、色情、恶意软件、索要密码或隐私信息、编造虚假信息;
+  · 收件人是机构邮箱(recipientType 为 organization 或 unknown)而 explicitIntent 为 false;
+  · 收件人不是有效的邮箱地址。
+- 收件人明确是个人且内容正常时 allow 为 true。
+- 宁可拒绝也不要放过可疑邮件。reason 要用中文说清楚放行或拒绝的依据, 拒绝时还要给出主人可以怎么补充要求。`;
 
 const CATEGORY_NAME = {
 	[emailConst.category.NONE]: '未分类',
@@ -57,7 +108,7 @@ const SYSTEM_PROMPT = `你是邮件系统内的智能助手, 既能帮用户操�
 
 【一、邮件操作】
 把用户对邮件的自然语言需求转换为批量操作计划。
-你只能使用以下 9 种操作类型, 不允许编造其它操作:
+你只能使用以下 10 种操作类型, 不允许编造其它操作:
 1. delete —— 删除邮件
 2. categorize —— 把邮件归入指定分类, 必须同时给出 category
 3. markRead —— 标记为已读
@@ -67,6 +118,7 @@ const SYSTEM_PROMPT = `你是邮件系统内的智能助手, 既能帮用户操�
 7. registerUsers —— 批量注册新用户, 必须给出 count(数量), 可选 prefix(邮箱前缀); 仅当当前用户是管理员时才允许使用
 8. deleteEmails —— 批量删除当前账户名下的邮箱, 可选 keyword(邮箱开头关键词)、count(最多删几个); 主邮箱不会被删除
 9. deleteUsers —— 批量删除用户, 可选 keyword(邮箱开头关键词)、status(0=正常, 1=禁用)、count(最多删几个); 仅当当前用户是管理员时才允许使用
+10. sendMail —— 替主人发出一封新邮件, 必须同时给出 to(收件人邮箱, 数组)、subject(主题)、content(正文纯文本)
 
 分类编号: 0=未分类, 1=账号, 2=通知, 3=账单, 4=推广, 5=其他
 
@@ -89,6 +141,17 @@ deleteEmails / deleteUsers 的补充说明:
 - keyword 和 count 至少要给出一个, 否则不要输出这两个操作, 改为在 reply 里追问要删哪些。
 - 这两个操作不可恢复, reply 里必须明确提醒用户这是删除操作。
 - 普通用户禁止使用 deleteUsers, deleteEmails 只能删自己名下的邮箱, 主邮箱不会被删。
+
+sendMail 的补充说明(发信属于不可撤回的对外动作, 必须严格遵守):
+- 触发条件: 只有主人明确要求你发信时才允许输出 sendMail, 例如"给 xxx 发封邮件""帮我写封信问候他""发个通知告诉他"。主人没让你发信时一律不要输出, 更不许你自己决定给谁发信。不确定主人要不要发时, 只在 reply 里追问。
+- 收件人身份必须先审查:
+  · 收件人是某个具体的人(个人邮箱) —— 可以发。
+  · 收件人是机构/公司/官方/客服/团队等公共邮箱(例如 support@google.com、contact@某公司.com、noreply@ 开头的地址) —— 只有当主人明确说清了发信的目的与性质(例如明确要求发一封咨询/通知/问候/合作/致谢/反馈邮件)时才允许输出 sendMail; 主人只说了"给这个官方邮箱发封邮件"而没说目的, 就不要输出 sendMail, 改为在 reply 里说明需要主人补充明确的要求。
+- 内容审查: 主题与正文都不得涉及垃圾营销群发、诈骗或钓鱼、冒充他人身份、违法内容、辱骂骚扰、色情、恶意软件、索要密码或隐私信息、编造虚假信息。命中任何一条都必须拒绝, 在 reply 里说明原因, 并且不要输出 sendMail。
+- 内容来源三种都支持: 主人给了完整主题与正文就照用; 主人只提要求就按要求代写; 主人让你自己拟就自己拟, 但都要先过上面的审查。
+- to 只能是真实邮箱地址, 最多 3 个; 绝对不能编造收件人地址, 主人没给地址时在 reply 里追问。
+- content 是纯文本正文, 不要写收件人/主题/日期这类报文头, 也不要用 Markdown 标记。
+- 发出后无法撤回, reply 里要说明将由系统代为发出, 请主人确认。
 
 【二、普通聊天与联网搜索】
 - 当用户的请求与邮件操作无关时, actions 必须为空数组, 直接在 reply 里自然回答即可: 闲聊、知识问答、翻译、写作、写代码等都不限主题。
@@ -121,10 +184,12 @@ deleteEmails / deleteUsers 的补充说明:
 批量删除邮箱时:
 {"reply":"...","actions":[{"type":"deleteEmails","keyword":"test","count":5,"description":"删除 test 开头的 5 个邮箱"}]}
 批量删除用户时(仅管理员):
-{"reply":"...","actions":[{"type":"deleteUsers","keyword":"test","count":3,"description":"删除 test 开头的 3 个用户"}]}`;
+{"reply":"...","actions":[{"type":"deleteUsers","keyword":"test","count":3,"description":"删除 test 开头的 3 个用户"}]}
+代主人发信时(收件人与正文必须齐全, description 写清发给谁):
+{"reply":"...","actions":[{"type":"sendMail","to":["someone@example.com"],"subject":"问候","content":"正文内容","description":"代主人给 someone@example.com 发一封问候邮件"}]}`;
 
 //人设: 只作用于自然语言的语气用词(reply 与聊天/搜索回答), 不得改变输出格式/操作类型/权限与删除确认等安全约束
-//要更换或关掉人设, 只改这一段即可, 上面 9 种操作与安全规则不受影响
+//要更换或关掉人设, 只改这一段即可, 上面 10 种操作与安全规则不受影响
 const PERSONA_PROMPT = `【角色设定卡 · 鲸娘（CETACEA_LOLI）】
 以下设定只体现在自然语言(reply 与聊天/搜索回答)里, 不要在输出结构上体现。
 
@@ -279,9 +344,15 @@ const aiAgentService = {
 		}
 
 		const requestSearch = this.normalizeQuery(parsed?.search);
-		const actions = parsed
-			? await this.resolveActions(c, userId, Array.isArray(parsed.actions) ? parsed.actions : [])
-			: [];
+		const resolved = parsed
+			? await this.resolveActions(c, userId, Array.isArray(parsed.actions) ? parsed.actions : [], userText, history)
+			: { actions: [], rejects: [] };
+		const actions = resolved.actions;
+
+		//发信没通过审查时把原因接在回复后面, 让主人知道要补充什么
+		if (resolved.rejects.length) {
+			reply = `${reply ? `${reply}\n\n` : ''}${resolved.rejects.join('\n')}`;
+		}
 
 		//有邮件操作或带了图片时以当前输入为准, 不再联网; 否则按需联网(模型主动要求, 或用户手动开启开关)
 		if (!actions.length && !images.length) {
@@ -659,6 +730,255 @@ const aiAgentService = {
 		return `<div style="font-size:14px;color:#222">${body}</div>`;
 	},
 
+	/*
+	 * 发信前的双重审查:
+	 * 1) 收件人身份 —— 先用确定性规则判定个人/机构, 机构邮箱必须主人说清了发信目的才放行;
+	 * 2) 内容合规 —— 交给模型判断有无垃圾营销、诈骗、冒充、骚扰等问题。
+	 * 任何一项不通过都不生成发信动作。
+	 */
+	async reviewSendMail(c, options, action, prompt, history) {
+		const localTypes = action.to.map(address => this.classifyRecipient(address));
+		//本地判出机构就按机构处理(更保守); 全部明确是个人才认定个人; 其余交给模型
+		const localType = localTypes.includes('organization')
+			? 'organization'
+			: (localTypes.every(type => type === 'personal') ? 'personal' : 'unknown');
+
+		const messages = [
+			{ role: 'system', content: SEND_REVIEW_PROMPT },
+			{
+				role: 'user',
+				content: `主人的原话: ${String(prompt || '').slice(0, 1000) || '(无)'}\n\n收件人: ${action.to.join(', ')}\n主题: ${action.subject || '(无主题)'}\n\n正文:\n${action.content}`
+			}
+		];
+
+		let parsed = null;
+
+		try {
+			parsed = this.parsePlan(await this.chat(c, options, messages, AI_MAX_TOKENS));
+		} catch (e) {
+			console.error(`AI 发信审查失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+		}
+
+		//审查这一步不能跳过: 模型没给出结果时一律不放行
+		if (!parsed) {
+			return { allow: false, recipientType: localType, reason: t('aiSendMailReviewFail') };
+		}
+
+		const modelType = ['personal', 'organization', 'unknown'].includes(parsed.recipientType)
+			? parsed.recipientType
+			: 'unknown';
+		const recipientType = localType === 'unknown' ? modelType : localType;
+		const explicitIntent = parsed.explicitIntent === true || this.hasSendPurpose(prompt, history);
+
+		//机构邮箱: 主人必须说清发信目的与性质, 只是"给这个官方邮箱发封信"就拒绝
+		if (recipientType !== 'personal' && !explicitIntent) {
+			return { allow: false, recipientType, reason: t('aiSendMailNeedPurpose') };
+		}
+
+		//内容不合规: 拒绝并把模型给出的原因带回给主人
+		if (parsed.allow !== true) {
+			return {
+				allow: false,
+				recipientType,
+				reason: String(parsed.reason || '').trim() || t('aiSendMailRejected')
+			};
+		}
+
+		return { allow: true, recipientType, reason: String(parsed.reason || '').trim() };
+	},
+
+	/*
+	 * 计划阶段: 审查通过后签发一张一次性凭证, 执行阶段凭它发信。
+	 * 这样"先审查、后发送"无法被绕过 —— 直接调执行接口没有凭证就发不出去。
+	 */
+	async resolveSendMail(c, userId, action, prompt, history) {
+		//硬约束: 必须主人在对话上下文里明确让她发信, 否则不生成任何发信动作
+		if (!this.hasSendIntent(prompt, history)) {
+			return { reject: t('aiSendMailNeedRequest') };
+		}
+
+		const options = await this.aiOptions(c);
+
+		if (!this.hasAi(c, options)) {
+			return { reject: t('aiNotConfigured') };
+		}
+
+		const review = await this.reviewSendMail(c, options, action, prompt, history);
+
+		if (!review.allow) {
+			return { reject: review.reason };
+		}
+
+		const settingRow = await settingService.query(c);
+
+		if (settingRow.send === settingConst.send.CLOSE) {
+			return { reject: t('disabledSend') };
+		}
+
+		const target = await this.sendMailAccount(c, userId, settingRow);
+
+		if (!target) {
+			return { reject: t('aiSendMailNoAccount') };
+		}
+
+		const rateKey = this.sendMailRateKey(target.account.email);
+
+		if (await this.sendMailRateLimited(c, rateKey)) {
+			return { reject: t('aiSendMailDailyLimit') };
+		}
+
+		return {
+			action: {
+				...action,
+				ticket: await this.issueSendTicket(c, userId, action),
+				recipientType: review.recipientType,
+				fromEmail: target.account.email,
+				count: 1
+			}
+		};
+	},
+
+	//发信账号: 优先用配置的 AI 邮箱(以鲸娘的身份发出), 没配置就回落主人自己的主邮箱
+	async sendMailAccount(c, userId, settingRow) {
+		const aiUserId = await this.aiMailUserId(c, settingRow);
+
+		if (aiUserId) {
+			const addresses = String(settingRow?.aiMailAddress || '')
+				.split(',')
+				.map(item => item.trim().toLowerCase())
+				.filter(Boolean);
+
+			for (const address of addresses) {
+				const accountRow = await accountService.selectByEmailIncludeDel(c, address);
+
+				if (accountRow && accountRow.userId === aiUserId) {
+					return { account: accountRow, userId: aiUserId };
+				}
+			}
+		}
+
+		const userRow = await userService.selectById(c, userId);
+
+		if (!userRow) {
+			return null;
+		}
+
+		const mainAccount = await accountService.selectByEmailIncludeDel(c, userRow.email);
+		return mainAccount ? { account: mainAccount, userId } : null;
+	},
+
+	sendTicketKey(ticket) {
+		return `ai_send_ticket:${ticket}`;
+	},
+
+	async issueSendTicket(c, userId, action) {
+		const ticket = `${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
+
+		await c.env.kv.put(this.sendTicketKey(ticket), JSON.stringify({
+			userId,
+			to: action.to,
+			subject: action.subject,
+			content: action.content
+		}), { expirationTtl: SEND_TICKET_TTL });
+
+		return ticket;
+	},
+
+	//核对凭证: 必须是本人、同一收件人与同一封内容, 被改过即失效
+	async readSendTicket(c, userId, action) {
+		if (!/^[a-f0-9]{40}$/.test(action.ticket || '')) {
+			return false;
+		}
+
+		let payload;
+
+		try {
+			const raw = await c.env.kv.get(this.sendTicketKey(action.ticket));
+			payload = raw ? JSON.parse(raw) : null;
+		} catch (e) {
+			return false;
+		}
+
+		return !!payload
+			&& payload.userId === userId
+			&& JSON.stringify(payload.to) === JSON.stringify(action.to)
+			&& payload.subject === action.subject
+			&& payload.content === action.content;
+	},
+
+	async dropSendTicket(c, ticket) {
+		try {
+			await c.env.kv.delete(this.sendTicketKey(ticket));
+		} catch (e) {
+			//凭证没删掉只是多留一会儿, 不影响本次发送
+		}
+	},
+
+	sendMailRateKey(email) {
+		return `ai_send_rl:${String(email).toLowerCase()}:${dayjs().format('YYYY-MM-DD')}`;
+	},
+
+	async sendMailRateLimited(c, rateKey) {
+		try {
+			return Number(await c.env.kv.get(rateKey)) >= SEND_MAIL_DAILY_LIMIT;
+		} catch (e) {
+			//KV 读失败时不拦, 不要因为限流组件异常把功能整体关掉
+			return false;
+		}
+	},
+
+	async incrSendMail(c, rateKey) {
+		try {
+			const count = Number(await c.env.kv.get(rateKey)) || 0;
+			await c.env.kv.put(rateKey, String(count + 1), { expirationTtl: 86400 });
+		} catch (e) {
+			console.warn('AI 发信计数失败: ', e?.message || e);
+		}
+	},
+
+	//真正发信: 只有持有计划阶段签发的审查凭证才会走到这里
+	async sendMail(c, userId, action) {
+		if (!(await this.readSendTicket(c, userId, action))) {
+			throw new BizError(t('aiSendMailNeedReview'));
+		}
+
+		const settingRow = await settingService.query(c);
+
+		if (settingRow.send === settingConst.send.CLOSE) {
+			throw new BizError(t('disabledSend'), 403);
+		}
+
+		const target = await this.sendMailAccount(c, userId, settingRow);
+
+		if (!target) {
+			throw new BizError(t('aiSendMailNoAccount'));
+		}
+
+		const rateKey = this.sendMailRateKey(target.account.email);
+
+		if (await this.sendMailRateLimited(c, rateKey)) {
+			throw new BizError(t('aiSendMailDailyLimit'));
+		}
+
+		const subject = action.subject || t('aiSendMailDefaultSubject');
+
+		await emailService.send(c, {
+			accountId: target.account.accountId,
+			name: target.account.name || emailUtils.getName(target.account.email),
+			sendType: 'send',
+			receiveEmail: action.to,
+			subject,
+			text: action.content,
+			content: this.textToHtml(action.content)
+		}, target.userId);
+
+		//发送成功才作废凭证与计数, 失败时主人还能原样重试
+		await this.dropSendTicket(c, action.ticket);
+		await this.incrSendMail(c, rateKey);
+
+		return { to: action.to, subject, from: target.account.email };
+	},
+
 	async execute(c, params, userId) {
 		const rawActions = Array.isArray(params?.actions) ? params.actions : [];
 		const results = [];
@@ -679,6 +999,12 @@ const aiAgentService = {
 					}
 					const data = await this.autoCategorize(c, userId, action.filter, options);
 					results.push({ type: action.type, success: true, count: data.updated, matched: data.matched, description: action.description });
+					continue;
+				}
+
+				if (action.type === SEND_MAIL_TYPE) {
+					const sent = await this.sendMail(c, userId, action);
+					results.push({ type: action.type, success: true, count: 1, items: [sent], description: action.description });
 					continue;
 				}
 
@@ -841,13 +1167,27 @@ const aiAgentService = {
 	},
 
 	//把模型返回的 actions 解析成带数量与样本的操作计划
-	async resolveActions(c, userId, rawActions) {
+	async resolveActions(c, userId, rawActions, prompt = '', history = []) {
 		const actions = [];
+		const rejects = [];
 
 		for (const raw of rawActions.slice(0, 10)) {
 			const action = this.normalizeAction(raw);
 
 			if (!action) {
+				continue;
+			}
+
+			if (action.type === SEND_MAIL_TYPE) {
+				//发信要先过审查, 通过才拿到凭证并进入计划, 没通过就把原因带回对话
+				const { action: sendAction, reject } = await this.resolveSendMail(c, userId, action, prompt, history);
+
+				if (sendAction) {
+					actions.push({ ...sendAction, filter: {}, samples: [] });
+				} else if (reject) {
+					rejects.push(reject);
+				}
+
 				continue;
 			}
 
@@ -891,7 +1231,7 @@ const aiAgentService = {
 			});
 		}
 
-		return actions;
+		return { actions, rejects };
 	},
 
 	async resolveIds(c, userId, filter, limit) {
@@ -984,7 +1324,21 @@ const aiAgentService = {
 		let prefix = '';
 		let keyword = '';
 		let status = null;
+		let to = [];
+		let subject = '';
+		let content = '';
 		const isDelete = DELETE_TARGET_TYPES.includes(type);
+
+		if (type === SEND_MAIL_TYPE) {
+			to = this.normalizeRecipients(action.to);
+			subject = String(action.subject || '').trim().slice(0, SEND_MAIL_SUBJECT_MAX);
+			content = String(action.content || '').trim().slice(0, SEND_MAIL_CONTENT_MAX);
+
+			//收件人与正文缺一不可, 缺了就丢弃, 由模型在对话里追问
+			if (!to.length || !content) {
+				return null;
+			}
+		}
 
 		if (type === 'categorize') {
 			category = Number(action.category);
@@ -1041,6 +1395,11 @@ const aiAgentService = {
 			prefix,
 			keyword,
 			status,
+			to,
+			subject,
+			content,
+			//发信审查凭证: 由服务端在计划阶段签发, 执行阶段校验后才真正发信
+			ticket: String(action.ticket || '').trim(),
 			filter: this.normalizeFilter(action.filter),
 			description: String(action.description || '').slice(0, 200)
 		};
@@ -1049,6 +1408,76 @@ const aiAgentService = {
 	//邮箱前缀只保留小写字母、数字与 . _ -
 	normalizePrefix(prefix) {
 		return String(prefix || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 20);
+	},
+
+	//收件人只保留合法邮箱地址, 去重并限制数量, 避免被用来群发
+	normalizeRecipients(to) {
+		const list = Array.isArray(to) ? to : [to];
+		const result = [];
+
+		for (const item of list) {
+			const address = String(item || '').trim().toLowerCase().slice(0, 100);
+
+			if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) || result.includes(address)) {
+				continue;
+			}
+
+			result.push(address);
+
+			if (result.length >= SEND_MAIL_MAX_RECIPIENTS) {
+				break;
+			}
+		}
+
+		return result;
+	},
+
+	//收件人身份: 个人 / 机构 / 未知。先按域名与本地部分做确定性判定, 判不出来才交给模型
+	classifyRecipient(address) {
+		const domain = emailUtils.getDomain(address).toLowerCase();
+		const local = emailUtils.getName(address).toLowerCase();
+
+		if (!domain || !local) {
+			return 'unknown';
+		}
+
+		if (DISPOSABLE_DOMAIN_PATTERN.test(domain)) {
+			return 'organization';
+		}
+
+		if (PERSONAL_MAIL_DOMAINS.includes(domain)) {
+			return 'personal';
+		}
+
+		if (ORG_DOMAIN_PATTERN.test(domain) || ORG_LOCAL_PATTERN.test(local)) {
+			return 'organization';
+		}
+
+		return 'unknown';
+	},
+
+	//主人是否在对话里明确让她发信: 本轮说了算, 也接受紧邻的上一轮(如"就按这个发吧")
+	hasSendIntent(prompt, history = []) {
+		const texts = [String(prompt || '')];
+		const lastUser = [...history].reverse().find(item => item.role === 'user');
+
+		if (lastUser) {
+			texts.push(String(lastUser.content || ''));
+		}
+
+		return texts.some(text => SEND_INTENT_PATTERN.test(text));
+	},
+
+	//主人是否说清了发信目的, 作为"明确要求"的确定性兜底
+	hasSendPurpose(prompt, history = []) {
+		const texts = [String(prompt || '')];
+		const lastUser = [...history].reverse().find(item => item.role === 'user');
+
+		if (lastUser) {
+			texts.push(String(lastUser.content || ''));
+		}
+
+		return texts.some(text => SEND_PURPOSE_PATTERN.test(text));
 	},
 
 	normalizeFilter(filter) {

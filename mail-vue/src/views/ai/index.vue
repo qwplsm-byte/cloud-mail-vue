@@ -110,6 +110,24 @@
                       <div v-if="action.description" class="action-desc">{{ action.description }}</div>
                       <div v-if="action.limited" class="action-hint">{{ limitedText(action) }}</div>
 
+                      <!--发信: 列出实际发件账号、收件人、主题与正文, 主人确认后才真正发出-->
+                      <div v-if="action.type === 'sendMail'" class="action-mail">
+                        <div class="mail-line">
+                          <span class="mail-label">{{ $t('aiSendFrom') }}</span>
+                          <span class="mail-value">{{ action.fromEmail }}</span>
+                        </div>
+                        <div class="mail-line">
+                          <span class="mail-label">{{ $t('aiSendTo') }}</span>
+                          <span class="mail-value">{{ (action.to || []).join('、') }}</span>
+                        </div>
+                        <div class="mail-line">
+                          <span class="mail-label">{{ $t('aiSendSubject') }}</span>
+                          <span class="mail-value">{{ action.subject || $t('noSubject') }}</span>
+                        </div>
+                        <div class="mail-preview">{{ action.content }}</div>
+                        <div class="action-hint">{{ recipientText(action) }}</div>
+                      </div>
+
                       <div v-if="action.samples && action.samples.length" class="action-samples">
                         <span class="samples-label">{{ $t('aiSamples') }}</span>
                         <div v-for="sample in action.samples" :key="sample.emailId || sample.email" class="sample-item">
@@ -392,6 +410,8 @@ const presets = [
   {key: 'registerUsers', icon: 'mdi:account-multiple-plus-outline', label: 'aiPresetRegisterUsers', prompt: 'aiPresetRegisterUsersPrompt', fill: true, perm: 'user:add'},
   {key: 'deleteEmails', icon: 'mdi:email-minus-outline', label: 'aiPresetDeleteEmails', prompt: 'aiPresetDeleteEmailsPrompt', fill: true, danger: true, perm: 'account:delete'},
   {key: 'deleteUsers', icon: 'mdi:account-multiple-minus-outline', label: 'aiPresetDeleteUsers', prompt: 'aiPresetDeleteUsersPrompt', fill: true, danger: true, perm: 'user:delete'},
+  //发信必须自己填收件人, 所以只把模板填进输入框
+  {key: 'sendMail', icon: 'mdi:send-outline', label: 'aiPresetSendMail', prompt: 'aiPresetSendMailPrompt', fill: true},
 ]
 
 //注册/删除用户、删除邮箱都有对应权限要求, 与后端判定一致, 没权限就不显示对应预设
@@ -420,6 +440,7 @@ const ACTION_LABEL = {
   registerUsers: 'aiTypeRegisterUsers',
   deleteEmails: 'aiTypeDeleteEmails',
   deleteUsers: 'aiTypeDeleteUsers',
+  sendMail: 'aiTypeSendMail',
 }
 
 const ACTION_ICON = {
@@ -432,6 +453,7 @@ const ACTION_ICON = {
   registerUsers: 'mdi:account-multiple-plus-outline',
   deleteEmails: 'mdi:email-minus-outline',
   deleteUsers: 'mdi:account-multiple-minus-outline',
+  sendMail: 'mdi:send-outline',
 }
 
 //这两个是按数量创建账号, 与按邮件封数统计的操作文案不同
@@ -463,10 +485,23 @@ function hasDelete(plan) {
   return plan.some(action => action.type === 'delete' || isDeleteTarget(action.type))
 }
 
+//发信发出去就收不回来, 执行前也要再确认一次
+function hasSendMail(plan) {
+  return plan.some(action => action.type === 'sendMail')
+}
+
+//发信审查给出的收件人身份, 让主人在确认前就看清楚这封信是发给谁的
+function recipientText(action) {
+  return action.recipientType === 'personal' ? t('aiSendRecipientPersonal') : t('aiSendRecipientOrg')
+}
+
 function resultText(item) {
   const name = t(actionLabel(item.type))
   if (!item.success) {
     return `${name} · ${item.message || t('aiSkipped')}`
+  }
+  if (item.type === 'sendMail') {
+    return `${name} · ${t('aiSent')}`
   }
   if (isBulk(item.type)) {
     return `${name} · ${t('aiCreated', {count: item.count})}`
@@ -478,6 +513,9 @@ function resultText(item) {
 }
 
 function countText(action) {
+  if (action.type === 'sendMail') {
+    return t('aiSendRecipientCount', {count: (action.to || []).length})
+  }
   if (isBulk(action.type)) {
     //批量创建没有"匹配"的概念, 直接显示将要创建的数量
     return t('aiCreateCount', {count: action.count || 0})
@@ -672,14 +710,20 @@ async function runPlan(msg) {
     return
   }
 
-  //删除类操作不可恢复, 执行前再确认一次
-  if (hasDelete(msg.plan)) {
+  //删除与发信都不可撤回, 执行前再确认一次
+  if (hasDelete(msg.plan) || hasSendMail(msg.plan)) {
+    const sendMail = hasSendMail(msg.plan)
+
     try {
-      await ElMessageBox.confirm(t('aiDeleteConfirm'), t('aiDeleteConfirmTitle'), {
-        confirmButtonText: t('aiExecute'),
-        cancelButtonText: t('cancel'),
-        type: 'warning',
-      })
+      await ElMessageBox.confirm(
+        sendMail ? t('aiSendConfirm') : t('aiDeleteConfirm'),
+        sendMail ? t('aiSendConfirmTitle') : t('aiDeleteConfirmTitle'),
+        {
+          confirmButtonText: t('aiExecute'),
+          cancelButtonText: t('cancel'),
+          type: 'warning',
+        }
+      )
     } catch (e) {
       return
     }
@@ -694,6 +738,11 @@ async function runPlan(msg) {
     status: action.status,
     description: action.description,
     filter: action.filter,
+    //发信要把收件人、主题、正文和审查凭证原样带回后端, 凭证对不上就不会发出去
+    to: action.to,
+    subject: action.subject,
+    content: action.content,
+    ticket: action.ticket,
   }))
 
   msg.status = 'executing'
@@ -1317,6 +1366,48 @@ function clearConversation() {
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+    }
+  }
+
+  /*发信卡片: 逐行列出收件信息, 正文单独给出预览区*/
+  .action-mail {
+    margin-top: 8px;
+    padding-left: 34px;
+
+    .mail-line {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 1px 0;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .mail-label {
+      flex-shrink: 0;
+      width: 44px;
+      color: var(--el-text-color-placeholder);
+    }
+
+    .mail-value {
+      flex: 1;
+      min-width: 0;
+      color: var(--el-text-color-regular);
+      overflow-wrap: anywhere;
+    }
+
+    .mail-preview {
+      margin-top: 6px;
+      padding: 8px 10px;
+      max-height: 140px;
+      overflow-y: auto;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--el-text-color-regular);
+      background: var(--el-fill-color-light);
     }
   }
 }
