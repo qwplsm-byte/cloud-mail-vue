@@ -134,6 +134,70 @@ const r2Service = {
 			await s3Service.deleteObj(c, key);
 		}
 
+	},
+
+	//对象访问响应: 按当前生效的存储类型读取
+	//直传方案下大文件落在 R2, 必须由 R2 直接流式返回(支持 Range), 否则视频无法播放/拖动进度
+	//R2 未命中时回退到 KV, 兼容切换存储前的历史数据
+	async toObjResp(c, key) {
+
+		const storageType = await this.storageType(c);
+
+		if (storageType !== 'R2' || !c.env?.r2) {
+			return await kvObjService.getObj(c, key);
+		}
+
+		const rangeHeader = c.req?.headers?.get?.('range');
+		const matched = rangeHeader && /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+
+		let offset;
+		let length;
+		let suffix;
+
+		if (matched) {
+			if (matched[1] === '' && matched[2] === '') {
+				return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' } });
+			}
+			if (matched[1] === '') {
+				suffix = Number(matched[2]);
+			} else {
+				offset = Number(matched[1]);
+				length = matched[2] === '' ? undefined : Number(matched[2]) - offset + 1;
+			}
+		}
+
+		const options = suffix != null
+			? { range: { suffix } }
+			: (offset != null ? { range: { offset, ...(length != null ? { length } : {}) } } : undefined);
+
+		const obj = await c.env.r2.get(key, options);
+
+		if (!obj?.body) {
+			return await kvObjService.getObj(c, key);
+		}
+
+		const total = obj.size;
+		const start = obj.range?.offset ?? offset ?? 0;
+		const size = obj.range?.length ?? length ?? (total - start);
+		const partial = !!obj.range;
+
+		const headers = {
+			'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
+			'Cache-Control': obj.httpMetadata?.cacheControl || 'public, max-age=31536000, immutable',
+			'Accept-Ranges': 'bytes',
+			'Content-Length': String(partial ? size : total)
+		};
+
+		if (obj.httpMetadata?.contentDisposition) {
+			headers['Content-Disposition'] = obj.httpMetadata.contentDisposition;
+		}
+
+		if (partial) {
+			headers['Content-Range'] = `bytes ${start}-${start + size - 1}/${total}`;
+			return new Response(obj.body, { status: 206, headers });
+		}
+
+		return new Response(obj.body, { status: 200, headers });
 	}
 
 };
