@@ -10,6 +10,7 @@ import accountService from './account-service';
 import userService from './user-service';
 import roleService from './role-service';
 import aiService from './ai-service';
+import aiMemoryService from './ai-memory-service';
 import webSearchService from './web-search-service';
 import settingService from './setting-service';
 import permService from './perm-service';
@@ -55,7 +56,28 @@ const SEND_MAIL_DAILY_LIMIT = 20;
 const SEND_TICKET_TTL = 2 * 60 * 60;
 
 //必须主人在对话里明确让她发信才允许出现发信动作, 否则一律丢弃
-const SEND_INTENT_PATTERN = /(发(个|封|一封|一条)?\s*(邮件|信|email|mail|通知|消息|提醒|邀请|问候|祝贺|慰问|道歉|感谢)|发送(个|封|一封|一条)?\s*(邮件|信|通知|消息)|寄(个|封|一封)?\s*(邮件|信)|写(个|封|一封)?\s*(邮件|信)|(代|帮|替)(我|你|鲸娘)?\s*发(个|封|一封)?\s*(邮件|信|通知|消息)|回(一封|个)?\s*信|回复(这封|一下)?\s*(邮件|信)|send\s+(an?\s+)?(email|mail)|write\s+(an?\s+)?(email|mail)|reply\s+to\s+(the\s+)?(email|mail))/i;
+//除"发封邮件/寄信"这类完整说法, 也要认下"发吧/发出去/发给他"这种顺着上一轮的确认口吻
+//注意: 量词和名词之间常夹着修饰语(如"发一封测试邮件""写封感谢信"), 这里统一放行少量中间字符, 否则最常见的中文说法会漏判
+const MAIL_NOUN = '邮件|信(?!息)|email|mail|通知|消息|提醒|邀请|问候|祝贺|慰问|道歉|感谢';
+const SEND_VERB = '发送|寄|邮寄|回复|写';
+const SEND_MEASURE = '(个|封|一封|一份|一条|这封|那封|这|那)';
+const SEND_INTENT_PATTERN = new RegExp(
+	`(((${SEND_VERB})|((发|写|回)\\s*${SEND_MEASURE}))\\s*[\\u4e00-\\u9fa5A-Za-z0-9]{0,10}?(${MAIL_NOUN})`
+	+ `|发\\s*(邮件|信(?!息)|email|mail)`
+	+ `|(帮|代|替)[\\s\\S]{0,20}?(发|发送|寄|写)\\s*(个|封|一封)?\\s*[\\s\\S]{0,10}?(${MAIL_NOUN})`
+	+ `|回\\s*(一封|个)?\\s*信(?!息)`
+	+ `|回复(这封|一下)?\\s*(邮件|信)`
+	+ `|发(出去|过来|给他|给她|给它|给你|给我|吧|呗|了|一下|一个)`
+	+ `|就(这样|这么)?\\s*发|直接发|马上发|立刻发|现在发|开始发`
+	+ `|send\\s+(it|this|an?\\s+(email|mail))|go\\s+ahead|write\\s+(an?\\s+)?(email|mail)|reply\\s+to\\s+(the\\s+)?(email|mail))`,
+	'i'
+);
+
+//顺着上一轮的短确认: 单独出现时不足以判定发信, 只在上一轮助手确实在提议发信时才认
+const SEND_CONFIRM_PATTERN = /^\s*(好(的|呀|嘞|吧|哒)?|可以(吧|的)?|行(吧|的)?|嗯+|对|是|没错|没问题|就这样|这么办|就这么办|去吧|安排|走起|开始吧|动手吧|确认|确定|同意|批准|执行|发|发送|发吧|发呗|发出去|立即发送|马上发送|ok(ay)?|yes|yep|sure|go)\s*[!！。.~～]*\s*$/i;
+
+//上一轮助手是否在聊发信的事: 用来兜住"要发吗 -> 可以"这种只有短确认的场景
+const SEND_TALK_PATTERN = /(邮件|信件|发信|寄信|发送|email|mail)/i;
 
 //用户在对话里说清了发信目的的说法, 用于判定"明确要求"
 const SEND_PURPOSE_PATTERN = /(咨询|询问|请教|问一下|了解|通知|告知|提醒|问候|打招呼|致谢|感谢|道歉|邀请|约|申请|反馈|投诉|建议|合作|洽谈|联系|商务|求职|应聘|推荐|介绍|祝贺|慰问|催|跟(进|踪)|确认|report|inquire|notify|greet|thank|invite|apply|feedback|complain|cooperat)/i;
@@ -87,7 +109,7 @@ const SEND_REVIEW_PROMPT = `你是邮件系统的发信安全审查员, 负责�
 
 判定规则:
 - recipientType: 收件人指向某个具体的自然人(个人常用邮箱、个人名字命名的邮箱)填 personal; 指向机构/公司/官方/客服/团队/组织等公共邮箱填 organization; 实在判断不了填 unknown。
-- explicitIntent: 主人原话里是否明确说清了发信的目的与性质。例如明确要求发一封咨询、通知、问候、合作、致谢、反馈邮件就算 true; 只说了"给这个邮箱发封邮件"却没说要发什么内容、什么目的, 就算 false。
+- explicitIntent: 结合"最近的对话"和"主人这一轮的原话"一起看, 主人是否明确说要发信、或顺着上一轮的提议确认要发(例如上一轮助手问"要发吗", 主人回"可以""发吧""就这样")。明确要求发一封咨询、通知、问候、合作、致谢、反馈邮件也算 true; 但若主人只是随便聊到这个邮箱, 或从没表达过要发信, 就算 false。
 - allow 必须为 false 的情形:
   · 主题或正文涉及垃圾营销群发、诈骗或钓鱼、冒充他人身份、违法内容、辱骂骚扰、色情、恶意软件、索要密码或隐私信息、编造虚假信息;
   · 收件人是机构邮箱(recipientType 为 organization 或 unknown)而 explicitIntent 为 false;
@@ -118,7 +140,7 @@ const SYSTEM_PROMPT = `你是邮件系统内的智能助手, 既能帮用户操�
 7. registerUsers —— 批量注册新用户, 必须给出 count(数量), 可选 prefix(邮箱前缀); 仅当当前用户是管理员时才允许使用
 8. deleteEmails —— 批量删除当前账户名下的邮箱, 可选 keyword(邮箱开头关键词)、count(最多删几个); 主邮箱不会被删除
 9. deleteUsers —— 批量删除用户, 可选 keyword(邮箱开头关键词)、status(0=正常, 1=禁用)、count(最多删几个); 仅当当前用户是管理员时才允许使用
-10. sendMail —— 替主人发出一封新邮件, 必须同时给出 to(收件人邮箱, 数组)、subject(主题)、content(正文纯文本)
+10. sendMail —— 替主人发出一封新邮件, 必须同时给出 to(收件人邮箱, 数组)、subject(主题)、content(正文纯文本); 主人指定了用哪个邮箱发时再加上 from(发件邮箱地址)
 
 分类编号: 0=未分类, 1=账号, 2=通知, 3=账单, 4=推广, 5=其他
 
@@ -143,7 +165,12 @@ deleteEmails / deleteUsers 的补充说明:
 - 普通用户禁止使用 deleteUsers, deleteEmails 只能删自己名下的邮箱, 主邮箱不会被删。
 
 sendMail 的补充说明(发信属于不可撤回的对外动作, 必须严格遵守):
-- 触发条件: 只有主人明确要求你发信时才允许输出 sendMail, 例如"给 xxx 发封邮件""帮我写封信问候他""发个通知告诉他"。主人没让你发信时一律不要输出, 更不许你自己决定给谁发信。不确定主人要不要发时, 只在 reply 里追问。
+- 触发条件: 只有主人明确要求你发信时才允许输出 sendMail, 例如"给 xxx 发封邮件""帮我写封信问候他""发个通知告诉他"。主人顺着上一轮说"好""可以""发吧""发出去"这类确认, 也算明确要求。主人没让你发信时一律不要输出, 更不许你自己决定给谁发信。不确定主人要不要发时, 只在 reply 里追问。
+- 发件邮箱(重要): 用哪个邮箱发信由主人在对话里说了算。
+  · 主人这轮或之前说清了用哪个邮箱发, 把地址填进 from。
+  · 主人没说时, 看"我记住的关于主人的事"里有没有"默认发件邮箱", 有就直接用, 并把该地址填进 from。
+  · 两处都没有, 就不要输出 sendMail, 改为在 reply 里问主人"想用哪个邮箱发信"。
+  · from 只能是主人自己名下的邮箱地址, 绝对不能编造。
 - 收件人身份必须先审查:
   · 收件人是某个具体的人(个人邮箱) —— 可以发。
   · 收件人是机构/公司/官方/客服/团队等公共邮箱(例如 support@google.com、contact@某公司.com、noreply@ 开头的地址) —— 只有当主人明确说清了发信的目的与性质(例如明确要求发一封咨询/通知/问候/合作/致谢/反馈邮件)时才允许输出 sendMail; 主人只说了"给这个官方邮箱发封邮件"而没说目的, 就不要输出 sendMail, 改为在 reply 里说明需要主人补充明确的要求。
@@ -151,7 +178,7 @@ sendMail 的补充说明(发信属于不可撤回的对外动作, 必须严格�
 - 内容来源三种都支持: 主人给了完整主题与正文就照用; 主人只提要求就按要求代写; 主人让你自己拟就自己拟, 但都要先过上面的审查。
 - to 只能是真实邮箱地址, 最多 3 个; 绝对不能编造收件人地址, 主人没给地址时在 reply 里追问。
 - content 是纯文本正文, 不要写收件人/主题/日期这类报文头, 也不要用 Markdown 标记。
-- 发出后无法撤回, reply 里要说明将由系统代为发出, 请主人确认。
+- 发出后无法撤回, reply 里要说明将由系统代为发出, 请主人确认。措辞要留余地: 可以说"写好了一封发给某某的信, 主人点确认鲸娘就发", 但不要说"已经发出去了"。
 
 【二、普通聊天与联网搜索】
 - 当用户的请求与邮件操作无关时, actions 必须为空数组, 直接在 reply 里自然回答即可: 闲聊、知识问答、翻译、写作、写代码等都不限主题。
@@ -185,8 +212,8 @@ sendMail 的补充说明(发信属于不可撤回的对外动作, 必须严格�
 {"reply":"...","actions":[{"type":"deleteEmails","keyword":"test","count":5,"description":"删除 test 开头的 5 个邮箱"}]}
 批量删除用户时(仅管理员):
 {"reply":"...","actions":[{"type":"deleteUsers","keyword":"test","count":3,"description":"删除 test 开头的 3 个用户"}]}
-代主人发信时(收件人与正文必须齐全, description 写清发给谁):
-{"reply":"...","actions":[{"type":"sendMail","to":["someone@example.com"],"subject":"问候","content":"正文内容","description":"代主人给 someone@example.com 发一封问候邮件"}]}`;
+代主人发信时(收件人、正文与发件邮箱必须齐全, description 写清发给谁):
+{"reply":"...","actions":[{"type":"sendMail","from":"me@example.com","to":["someone@example.com"],"subject":"问候","content":"正文内容","description":"代主人给 someone@example.com 发一封问候邮件"}]}`;
 
 //人设: 只作用于自然语言的语气用词(reply 与聊天/搜索回答), 不得改变输出格式/操作类型/权限与删除确认等安全约束
 //要更换或关掉人设, 只改这一段即可, 上面 10 种操作与安全规则不受影响
@@ -267,6 +294,14 @@ const SEARCH_SYSTEM_PROMPT = `现在要基于下面联网搜到的资料, 用鲸
 - 引用了某条资料就在那句话末尾标 [编号](如 [1]), 编号要和资料编号一致。
 - 用和主人提问相同的语言回答, 语气保持可爱口语。`;
 
+//发信被审查拦下时, 模型往往已经在回复里说"这就发", 必须让它按拒信原因重写一遍, 避免前后矛盾
+const REJECT_REPLY_PROMPT = `你原本准备替主人发一封邮件, 但发信前的审查没有通过, 所以这封信没有发出去。
+请用鲸娘的口吻重写给主人的回复:
+- 先说清"这封信暂时没发出去", 再一句话说明原因, 以及主人需要补充或修改什么。
+- 不要再说"这就发/马上发/已经发出去了"之类的话, 不要重复你原回复的内容。
+- 语气照旧口语可爱, 但结论必须明确, 控制在 80 字以内。
+- 直接输出回复正文, 不要输出 JSON, 不要输出任何其它说明。`;
+
 //带入多轮对话的上下文: 最多保留的轮数与单条长度上限
 const HISTORY_MAX = 10;
 const HISTORY_CONTENT_MAX = 2000;
@@ -299,13 +334,20 @@ const aiAgentService = {
 
 		const stats = await this.buildStats(c, userId);
 		const isAdmin = await this.isAdmin(c, userId, 'user:add');
-		const dateInfo = `当前日期: ${dayjs().format('YYYY-MM-DD')}\n邮箱概览: ${stats}\n当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers 与 deleteUsers)' : '普通用户(禁止使用 registerUsers 与 deleteUsers)'}`;
+		//把长期记忆与用户画像带上, 让鲸娘像"记得主人"一样接着聊
+		const memoryContext = await aiMemoryService.context(c, userId);
+		const dateInfo = [
+			`当前日期: ${dayjs().format('YYYY-MM-DD')}`,
+			`邮箱概览: ${stats}`,
+			`当前用户身份: ${isAdmin ? '管理员(允许使用 registerUsers 与 deleteUsers)' : '普通用户(禁止使用 registerUsers 与 deleteUsers)'}`
+		].join('\n');
 		const history = this.buildHistory(params?.history);
 
 		//文本附件并进提问文本, 图片走多模态消息
 		const userText = this.appendTextFiles(prompt, texts);
+		const systemContent = [SYSTEM_PROMPT, PERSONA_PROMPT, memoryContext].filter(Boolean).join('\n\n');
 		const messages = [
-			{ role: 'system', content: `${SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
+			{ role: 'system', content: systemContent },
 			...history,
 			{ role: 'user', content: this.buildUserContent(`${dateInfo}\n\n用户需求: ${userText}`, images) }
 		];
@@ -349,9 +391,9 @@ const aiAgentService = {
 			: { actions: [], rejects: [] };
 		const actions = resolved.actions;
 
-		//发信没通过审查时把原因接在回复后面, 让主人知道要补充什么
+		//发信被拦下时, 模型却常在回复里已经"这就发"了, 这里让它按拒信原因重写一遍, 别自相矛盾
 		if (resolved.rejects.length) {
-			reply = `${reply ? `${reply}\n\n` : ''}${resolved.rejects.join('\n')}`;
+			reply = await this.rewriteRejectedReply(c, options, history, userText, reply, resolved.rejects);
 		}
 
 		//有邮件操作或带了图片时以当前输入为准, 不再联网; 否则按需联网(模型主动要求, 或用户手动开启开关)
@@ -359,29 +401,81 @@ const aiAgentService = {
 			const query = requestSearch || (params?.webSearch ? this.normalizeQuery(prompt) : '');
 
 			if (query) {
-				return this.planWithSearch(c, options, history, userText, query, this.searchOptions(params));
+				const searched = await this.planWithSearch(c, options, history, userText, query, this.searchOptions(params), memoryContext);
+				this.scheduleMemory(c, options, userId, userText, searched.reply, history);
+				return searched;
 			}
 		}
 
-		return { reply: reply || t('aiAgentNoResult'), actions };
+		const finalReply = reply || t('aiAgentNoResult');
+		this.scheduleMemory(c, options, userId, userText, finalReply, history);
+
+		return { reply: finalReply, actions };
+	},
+
+	/*
+	 * 发信被审查拦下后重写回复。
+	 * 原回复里往往已经说了"这就发", 直接拼接拒信原因会前后打架, 所以交给模型重写一次。
+	 */
+	async rewriteRejectedReply(c, options, history, prompt, reply, rejects) {
+		const reason = rejects.join('\n');
+
+		try {
+			const messages = [
+				{ role: 'system', content: `${REJECT_REPLY_PROMPT}\n\n${PERSONA_PROMPT}` },
+				...history,
+				{
+					role: 'user',
+					content: `主人刚才说: ${String(prompt || '').slice(0, 800)}\n\n你原本的回复:\n${reply || '(空)'}\n\n审查没有通过的原因:\n${reason}`
+				}
+			];
+
+			const rewritten = this.plainReply(await this.chat(c, options, messages, AI_MAX_TOKENS));
+
+			return rewritten ? `${rewritten}\n\n${reason}` : reason;
+		} catch (e) {
+			//重写失败就退回"原回复 + 拒信原因", 至少把结论说清楚
+			console.warn(`发信被拒后重写回复失败: ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+			return reply ? `${reply}\n\n${reason}` : reason;
+		}
+	},
+
+	//对话结束后异步抽取记忆并更新画像, 不阻塞本次回复
+	scheduleMemory(c, options, userId, userText, reply, history) {
+		if (!this.hasAi(c, options)) {
+			return;
+		}
+
+		const task = aiMemoryService
+			.extract(c, options, userId, userText, reply, history)
+			.catch(e => console.warn('AI 记忆抽取失败: ', e?.message || e));
+
+		try {
+			c.executionCtx?.waitUntil?.(task);
+		} catch (e) {
+			//没有 executionCtx(如本地直接调用)时忽略, 任务已在后台跑
+		}
 	},
 
 	//联网检索后再让模型基于资料作答, 搜索失败时降级为普通回复, 不阻断对话
-	async planWithSearch(c, options, history, prompt, query, searchOptions = {}) {
+	async planWithSearch(c, options, history, prompt, query, searchOptions = {}, memoryContext = '') {
 		const results = await webSearchService.search(query, {
 			limit: SEARCH_RESULT_LIMIT,
 			engine: searchOptions.engine,
 			endpoint: searchOptions.endpoint
 		});
 
+		const searchSystem = [SEARCH_SYSTEM_PROMPT, PERSONA_PROMPT, memoryContext].filter(Boolean).join('\n\n');
+		const chatSystem = [SYSTEM_PROMPT, PERSONA_PROMPT, memoryContext].filter(Boolean).join('\n\n');
+
 		const messages = results.length
 			? [
-				{ role: 'system', content: `${SEARCH_SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
+				{ role: 'system', content: searchSystem },
 				...history,
 				{ role: 'user', content: `用户问题: ${prompt}\n\n以下是联网搜索到的资料:\n${this.formatResults(results)}` }
 			]
 			: [
-				{ role: 'system', content: `${SYSTEM_PROMPT}\n\n${PERSONA_PROMPT}` },
+				{ role: 'system', content: chatSystem },
 				...history,
 				{ role: 'user', content: `用户需求: ${prompt}` }
 			];
@@ -745,10 +839,7 @@ const aiAgentService = {
 
 		const messages = [
 			{ role: 'system', content: SEND_REVIEW_PROMPT },
-			{
-				role: 'user',
-				content: `主人的原话: ${String(prompt || '').slice(0, 1000) || '(无)'}\n\n收件人: ${action.to.join(', ')}\n主题: ${action.subject || '(无主题)'}\n\n正文:\n${action.content}`
-			}
+			{ role: 'user', content: this.buildReviewContext(prompt, history, action) }
 		];
 
 		let parsed = null;
@@ -761,7 +852,7 @@ const aiAgentService = {
 
 		//审查这一步不能跳过: 模型没给出结果时一律不放行
 		if (!parsed) {
-			return { allow: false, recipientType: localType, reason: t('aiSendMailReviewFail') };
+			return { allow: false, recipientType: localType, explicitIntent: false, reason: t('aiSendMailReviewFail') };
 		}
 
 		const modelType = ['personal', 'organization', 'unknown'].includes(parsed.recipientType)
@@ -772,7 +863,7 @@ const aiAgentService = {
 
 		//机构邮箱: 主人必须说清发信目的与性质, 只是"给这个官方邮箱发封信"就拒绝
 		if (recipientType !== 'personal' && !explicitIntent) {
-			return { allow: false, recipientType, reason: t('aiSendMailNeedPurpose') };
+			return { allow: false, recipientType, explicitIntent, reason: t('aiSendMailNeedPurpose') };
 		}
 
 		//内容不合规: 拒绝并把模型给出的原因带回给主人
@@ -780,11 +871,33 @@ const aiAgentService = {
 			return {
 				allow: false,
 				recipientType,
+				explicitIntent,
 				reason: String(parsed.reason || '').trim() || t('aiSendMailRejected')
 			};
 		}
 
-		return { allow: true, recipientType, reason: String(parsed.reason || '').trim() };
+		return { allow: true, recipientType, explicitIntent, reason: String(parsed.reason || '').trim() };
+	},
+
+	/*
+	 * 审查用的上下文: 除了主人这一轮的原话, 还要带上最近几轮对话。
+	 * 这样"上一轮助手问要不要发、主人回一句'可以发吧'"也能被读懂, 不会因为句式不匹配被误判成没让发信。
+	 */
+	buildReviewContext(prompt, history, action) {
+		const turns = (Array.isArray(history) ? history : [])
+			.slice(-6)
+			.map(item => `${item.role === 'user' ? '主人' : '助手'}: ${String(item.content || '').slice(0, 400)}`)
+			.filter(line => line.trim())
+			.join('\n');
+
+		return [
+			turns ? `最近的对话:\n${turns}` : '',
+			`主人这一轮的原话: ${String(prompt || '').slice(0, 1000) || '(无)'}`,
+			`收件人: ${action.to.join(', ')}`,
+			`发件邮箱: ${action.from || '(主人未指定)'}`,
+			`主题: ${action.subject || '(无主题)'}`,
+			`正文:\n${action.content}`
+		].filter(Boolean).join('\n\n');
 	},
 
 	/*
@@ -792,11 +905,6 @@ const aiAgentService = {
 	 * 这样"先审查、后发送"无法被绕过 —— 直接调执行接口没有凭证就发不出去。
 	 */
 	async resolveSendMail(c, userId, action, prompt, history) {
-		//硬约束: 必须主人在对话上下文里明确让她发信, 否则不生成任何发信动作
-		if (!this.hasSendIntent(prompt, history)) {
-			return { reject: t('aiSendMailNeedRequest') };
-		}
-
 		const options = await this.aiOptions(c);
 
 		if (!this.hasAi(c, options)) {
@@ -804,6 +912,11 @@ const aiAgentService = {
 		}
 
 		const review = await this.reviewSendMail(c, options, action, prompt, history);
+
+		//硬约束: 必须主人在对话上下文里明确让她发信。确定性句式或审查模型结合上下文的判断, 满足其一即可
+		if (!review.explicitIntent && !this.hasSendIntent(prompt, history)) {
+			return { reject: t('aiSendMailNeedRequest') };
+		}
 
 		if (!review.allow) {
 			return { reject: review.reason };
@@ -815,10 +928,11 @@ const aiAgentService = {
 			return { reject: t('disabledSend') };
 		}
 
-		const target = await this.sendMailAccount(c, userId, settingRow);
+		const target = await this.resolveSenderAccount(c, userId, settingRow, action.from);
 
 		if (!target) {
-			return { reject: t('aiSendMailNoAccount') };
+			//主人已经点名了邮箱却解析不到, 和"压根没说用哪个邮箱"是两回事, 提示要分开
+			return { reject: action.from ? t('aiSendMailSenderInvalid') : t('aiSendMailNoSender') };
 		}
 
 		const rateKey = this.sendMailRateKey(target.account.email);
@@ -827,10 +941,17 @@ const aiAgentService = {
 			return { reject: t('aiSendMailDailyLimit') };
 		}
 
+		const payload = {
+			from: target.account.email,
+			to: action.to,
+			subject: action.subject,
+			content: action.content
+		};
+
 		return {
 			action: {
 				...action,
-				ticket: await this.issueSendTicket(c, userId, action),
+				ticket: await this.issueSendTicket(c, userId, payload),
 				recipientType: review.recipientType,
 				fromEmail: target.account.email,
 				count: 1
@@ -838,56 +959,96 @@ const aiAgentService = {
 		};
 	},
 
-	//发信账号: 优先用配置的 AI 邮箱(以鲸娘的身份发出), 没配置就回落主人自己的主邮箱
-	async sendMailAccount(c, userId, settingRow) {
-		const aiUserId = await this.aiMailUserId(c, settingRow);
+	/*
+	 * 发件邮箱解析: 主人对话里点名的 > 记忆里的默认发件邮箱 > 系统配置给 AI 的邮箱。
+	 * 都没有就让对话去追问, 不再默默回落到主人的主邮箱。
+	 */
+	async resolveSenderAccount(c, userId, settingRow, requested) {
+		const address = String(requested || '').trim().toLowerCase();
 
-		if (aiUserId) {
-			const addresses = String(settingRow?.aiMailAddress || '')
-				.split(',')
-				.map(item => item.trim().toLowerCase())
-				.filter(Boolean);
+		if (address) {
+			return this.matchSenderAccount(c, userId, settingRow, address);
+		}
 
-			for (const address of addresses) {
-				const accountRow = await accountService.selectByEmailIncludeDel(c, address);
+		const remembered = await aiMemoryService.senderDefault(c, userId);
 
-				if (accountRow && accountRow.userId === aiUserId) {
-					return { account: accountRow, userId: aiUserId };
-				}
+		if (remembered) {
+			const hit = await this.matchSenderAccount(c, userId, settingRow, remembered);
+
+			if (hit) {
+				return hit;
 			}
 		}
 
-		const userRow = await userService.selectById(c, userId);
+		return this.aiMailAccount(c, settingRow);
+	},
 
-		if (!userRow) {
+	//系统设置的 AI 收件邮箱同时充当鲸娘自己的发件身份
+	async aiMailAccount(c, settingRow) {
+		const aiUserId = await this.aiMailUserId(c, settingRow);
+
+		if (!aiUserId) {
 			return null;
 		}
 
-		const mainAccount = await accountService.selectByEmailIncludeDel(c, userRow.email);
-		return mainAccount ? { account: mainAccount, userId } : null;
+		const addresses = String(settingRow?.aiMailAddress || '')
+			.split(',')
+			.map(item => item.trim().toLowerCase())
+			.filter(Boolean);
+
+		for (const address of addresses) {
+			const accountRow = await accountService.selectByEmailIncludeDel(c, address);
+
+			if (accountRow && accountRow.userId === aiUserId && accountRow.isDel === isDel.NORMAL) {
+				return { account: accountRow, userId: aiUserId };
+			}
+		}
+
+		return null;
+	},
+
+	//指定地址的发件账号: 只认主人自己名下的邮箱, 或系统配置给 AI 的邮箱, 不能拿别人的地址发
+	async matchSenderAccount(c, userId, settingRow, address) {
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+			return null;
+		}
+
+		const accountRow = await accountService.selectByEmailIncludeDel(c, address);
+
+		if (!accountRow || accountRow.isDel !== isDel.NORMAL) {
+			return null;
+		}
+
+		if (accountRow.userId === userId) {
+			return { account: accountRow, userId };
+		}
+
+		const configured = String(settingRow?.aiMailAddress || '')
+			.split(',')
+			.map(item => item.trim().toLowerCase())
+			.filter(Boolean);
+
+		return configured.includes(accountRow.email.toLowerCase())
+			? { account: accountRow, userId: accountRow.userId }
+			: null;
 	},
 
 	sendTicketKey(ticket) {
 		return `ai_send_ticket:${ticket}`;
 	},
 
-	async issueSendTicket(c, userId, action) {
+	async issueSendTicket(c, userId, payload) {
 		const ticket = `${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
 
-		await c.env.kv.put(this.sendTicketKey(ticket), JSON.stringify({
-			userId,
-			to: action.to,
-			subject: action.subject,
-			content: action.content
-		}), { expirationTtl: SEND_TICKET_TTL });
+		await c.env.kv.put(this.sendTicketKey(ticket), JSON.stringify({ userId, ...payload }), { expirationTtl: SEND_TICKET_TTL });
 
 		return ticket;
 	},
 
-	//核对凭证: 必须是本人、同一收件人与同一封内容, 被改过即失效
+	//核对凭证: 必须是本人、同一发件邮箱、同一收件人与同一封内容, 被改过即失效
 	async readSendTicket(c, userId, action) {
-		if (!/^[a-f0-9]{40}$/.test(action.ticket || '')) {
-			return false;
+		if (!/^[a-f0-9]{40}$/.test(action?.ticket || '')) {
+			return null;
 		}
 
 		let payload;
@@ -896,14 +1057,20 @@ const aiAgentService = {
 			const raw = await c.env.kv.get(this.sendTicketKey(action.ticket));
 			payload = raw ? JSON.parse(raw) : null;
 		} catch (e) {
-			return false;
+			return null;
 		}
 
-		return !!payload
-			&& payload.userId === userId
-			&& JSON.stringify(payload.to) === JSON.stringify(action.to)
-			&& payload.subject === action.subject
-			&& payload.content === action.content;
+		if (!payload || payload.userId !== userId) {
+			return null;
+		}
+
+		if (JSON.stringify(payload.to) !== JSON.stringify(action.to)
+			|| payload.subject !== action.subject
+			|| payload.content !== action.content) {
+			return null;
+		}
+
+		return payload;
 	},
 
 	async dropSendTicket(c, ticket) {
@@ -936,9 +1103,11 @@ const aiAgentService = {
 		}
 	},
 
-	//真正发信: 只有持有计划阶段签发的审查凭证才会走到这里
+	//真正发信: 只有持有计划阶段签发的审查凭证才会走到这里, 发件邮箱与内容都以凭证为准
 	async sendMail(c, userId, action) {
-		if (!(await this.readSendTicket(c, userId, action))) {
+		const ticket = await this.readSendTicket(c, userId, action);
+
+		if (!ticket) {
 			throw new BizError(t('aiSendMailNeedReview'));
 		}
 
@@ -948,10 +1117,10 @@ const aiAgentService = {
 			throw new BizError(t('disabledSend'), 403);
 		}
 
-		const target = await this.sendMailAccount(c, userId, settingRow);
+		const target = await this.matchSenderAccount(c, userId, settingRow, ticket.from);
 
 		if (!target) {
-			throw new BizError(t('aiSendMailNoAccount'));
+			throw new BizError(t('aiSendMailSenderInvalid'));
 		}
 
 		const rateKey = this.sendMailRateKey(target.account.email);
@@ -960,23 +1129,26 @@ const aiAgentService = {
 			throw new BizError(t('aiSendMailDailyLimit'));
 		}
 
-		const subject = action.subject || t('aiSendMailDefaultSubject');
+		const subject = ticket.subject || t('aiSendMailDefaultSubject');
 
 		await emailService.send(c, {
 			accountId: target.account.accountId,
 			name: target.account.name || emailUtils.getName(target.account.email),
 			sendType: 'send',
-			receiveEmail: action.to,
+			receiveEmail: ticket.to,
 			subject,
-			text: action.content,
-			content: this.textToHtml(action.content)
+			text: ticket.content,
+			content: this.textToHtml(ticket.content)
 		}, target.userId);
 
 		//发送成功才作废凭证与计数, 失败时主人还能原样重试
 		await this.dropSendTicket(c, action.ticket);
 		await this.incrSendMail(c, rateKey);
 
-		return { to: action.to, subject, from: target.account.email };
+		//把这次用的发件邮箱记成默认, 下次主人不指定就直接用它
+		await aiMemoryService.rememberSender(c, userId, target.account.email);
+
+		return { to: ticket.to, subject, from: target.account.email };
 	},
 
 	async execute(c, params, userId) {
@@ -1327,12 +1499,15 @@ const aiAgentService = {
 		let to = [];
 		let subject = '';
 		let content = '';
+		//主人可以在对话里点名用哪个邮箱发信, 这个选择必须一路带到审查与发信阶段
+		let from = '';
 		const isDelete = DELETE_TARGET_TYPES.includes(type);
 
 		if (type === SEND_MAIL_TYPE) {
 			to = this.normalizeRecipients(action.to);
 			subject = String(action.subject || '').trim().slice(0, SEND_MAIL_SUBJECT_MAX);
 			content = String(action.content || '').trim().slice(0, SEND_MAIL_CONTENT_MAX);
+			from = String(action.from || '').trim().toLowerCase().slice(0, 100);
 
 			//收件人与正文缺一不可, 缺了就丢弃, 由模型在对话里追问
 			if (!to.length || !content) {
@@ -1398,6 +1573,7 @@ const aiAgentService = {
 			to,
 			subject,
 			content,
+			from,
 			//发信审查凭证: 由服务端在计划阶段签发, 执行阶段校验后才真正发信
 			ticket: String(action.ticket || '').trim(),
 			filter: this.normalizeFilter(action.filter),
@@ -1458,14 +1634,31 @@ const aiAgentService = {
 
 	//主人是否在对话里明确让她发信: 本轮说了算, 也接受紧邻的上一轮(如"就按这个发吧")
 	hasSendIntent(prompt, history = []) {
-		const texts = [String(prompt || '')];
+		const text = String(prompt || '');
 		const lastUser = [...history].reverse().find(item => item.role === 'user');
 
-		if (lastUser) {
-			texts.push(String(lastUser.content || ''));
+		if (SEND_INTENT_PATTERN.test(text)) {
+			return true;
 		}
 
-		return texts.some(text => SEND_INTENT_PATTERN.test(text));
+		if (lastUser && SEND_INTENT_PATTERN.test(String(lastUser.content || ''))) {
+			return true;
+		}
+
+		//"可以""好""就这样"这类短确认本身不构成发信要求, 只有上一轮助手确实在提发信的事时才认
+		if (SEND_CONFIRM_PATTERN.test(text)) {
+			const lastAssistant = [...history].reverse().find(item => item.role === 'assistant');
+
+			if (!lastAssistant) {
+				return false;
+			}
+
+			const said = String(lastAssistant.content || '');
+
+			return SEND_INTENT_PATTERN.test(said) || SEND_TALK_PATTERN.test(said);
+		}
+
+		return false;
 	},
 
 	//主人是否说清了发信目的, 作为"明确要求"的确定性兜底

@@ -8,6 +8,10 @@
         <div class="head-title">{{ $t('aiAssistant') }}</div>
         <div class="head-sub">{{ $t('aiAssistantDesc') }}</div>
       </div>
+      <el-button text class="head-memory" :title="$t('aiMemoryTitle')" @click="openMemory">
+        <Icon icon="mdi:brain" :width="16" :height="16" />
+        <span>{{ $t('aiMemory') }}</span>
+      </el-button>
       <el-button v-if="messages.length" text class="head-clear" @click="clearConversation">
         <Icon icon="mdi:broom" :width="16" :height="16" />
         <span>{{ $t('aiClear') }}</span>
@@ -250,6 +254,67 @@
         <Icon icon="mdi:send" :width="18" :height="18" />
       </el-button>
     </div>
+
+    <!-- AI 记忆与用户画像: 查看/增删鲸娘记住的长期信息 -->
+    <el-drawer v-model="memoryVisible" :title="$t('aiMemoryTitle')" size="420px" class="memory-drawer">
+      <div v-loading="memoryLoading" class="memory-panel">
+        <div class="memory-desc">{{ $t('aiMemoryDesc') }}</div>
+
+        <div class="memory-block">
+          <div class="block-head">
+            <span class="block-title">{{ $t('aiMemoryProfileTitle') }}</span>
+            <el-button text size="small" class="block-edit" @click="editProfile">{{ $t('aiMemoryProfileEdit') }}</el-button>
+          </div>
+          <div v-if="memoryProfile" class="profile-text">{{ memoryProfile }}</div>
+          <div v-else class="profile-empty">{{ $t('aiMemoryProfileEmpty') }}</div>
+        </div>
+
+        <div class="memory-block">
+          <div class="block-head">
+            <span class="block-title">{{ $t('aiMemoryListTitle') }}</span>
+            <span class="block-count">{{ $t('aiMemoryCount', {count: memoryList.length}) }}</span>
+          </div>
+
+          <div v-if="memoryList.length" class="memory-list">
+            <div v-for="item in memoryList" :key="item.id" class="memory-item">
+              <div class="item-top">
+                <span class="item-cat">{{ categoryText(item.category) }}</span>
+                <span class="item-time">{{ item.createTime }}</span>
+              </div>
+              <div class="item-content">{{ item.content }}</div>
+              <div class="item-actions">
+                <button class="item-btn" @click="editMemory(item)">{{ $t('aiMemoryEdit') }}</button>
+                <button class="item-btn is-danger" @click="removeMemory(item)">{{ $t('aiMemoryDelete') }}</button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="memory-empty">{{ $t('aiMemoryEmpty') }}</div>
+
+          <div class="memory-footer">
+            <el-button size="small" type="primary" plain @click="addMemory">{{ $t('aiMemoryAdd') }}</el-button>
+            <el-button size="small" type="danger" plain :disabled="!memoryList.length && !memoryProfile"
+                       @click="clearMemory">{{ $t('aiMemoryClear') }}</el-button>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- 记忆条目新增/修改: sendFrom 类别会作为鲸娘的默认发件邮箱 -->
+    <el-dialog v-model="editVisible" :title="editForm.id ? $t('aiMemoryEdit') : $t('aiMemoryAdd')"
+               width="420px" append-to-body>
+      <div class="edit-row">
+        <span class="edit-label">{{ $t('aiMemoryCategory') }}</span>
+        <el-select v-model="editForm.category" size="small" class="edit-select">
+          <el-option v-for="cat in MEMORY_CATEGORIES" :key="cat.value" :label="$t(cat.label)" :value="cat.value"/>
+        </el-select>
+      </div>
+      <el-input v-model="editForm.content" type="textarea" :rows="3" maxlength="300" show-word-limit
+                :placeholder="$t('aiMemoryContentPlaceholder')"/>
+      <template #footer>
+        <el-button @click="editVisible = false">{{ $t('cancel') }}</el-button>
+        <el-button type="primary" :loading="editLoading" @click="saveMemory">{{ $t('confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -257,7 +322,15 @@
 import {computed, defineOptions, nextTick, onBeforeUnmount, reactive, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {ElMessage, ElMessageBox} from "element-plus";
-import {aiAssistantExecute, aiAssistantPlan} from "@/request/ai.js";
+import {
+  aiAssistantExecute,
+  aiAssistantPlan,
+  aiMemoryClear,
+  aiMemoryDetail,
+  aiMemoryRemove,
+  aiMemorySave,
+  aiMemorySaveProfile
+} from "@/request/ai.js";
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
 //AI 助手形象: 侧边栏与对话页共用同一张鲸娘头像
@@ -290,6 +363,26 @@ const MAX_TEXT_CHARS = 12000
 const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'csv', 'log', 'yml', 'yaml', 'ini', 'conf', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'go', 'sql', 'sh']
 const messages = ref(loadMessages())
 const elapsed = ref(0)
+
+//AI 记忆面板: 画像 + 记忆条目, 打开时拉取
+const memoryVisible = ref(false)
+const memoryLoading = ref(false)
+const memoryProfile = ref('')
+const memoryList = ref([])
+//新增/修改记忆的表单, id 为 0 表示新增
+const editVisible = ref(false)
+const editLoading = ref(false)
+const editForm = reactive({id: 0, category: 'fact', content: ''})
+
+//与后端 ai-memory-service 的类别保持一致
+const MEMORY_CATEGORIES = [
+  {value: 'fact', label: 'aiMemoryCatFact'},
+  {value: 'preference', label: 'aiMemoryCatPreference'},
+  {value: 'identity', label: 'aiMemoryCatIdentity'},
+  {value: 'contact', label: 'aiMemoryCatContact'},
+  {value: 'sendFrom', label: 'aiMemoryCatSendFrom'},
+  {value: 'other', label: 'aiMemoryCatOther'},
+]
 //联网搜索开关, 开启后本次提问会先联网检索再作答
 const webSearch = ref(false)
 
@@ -774,6 +867,115 @@ function clearConversation() {
   }).catch(() => {
   })
 }
+
+function categoryText(category) {
+  const hit = MEMORY_CATEGORIES.find(item => item.value === category)
+  return t(hit ? hit.label : 'aiMemoryCatOther')
+}
+
+function openMemory() {
+  memoryVisible.value = true
+  loadMemory()
+}
+
+async function loadMemory() {
+  memoryLoading.value = true
+  try {
+    const data = await aiMemoryDetail()
+    memoryProfile.value = data?.profile || ''
+    memoryList.value = data?.memories || []
+  } catch (e) {
+    //错误提示已由 axios 拦截器统一处理
+  } finally {
+    memoryLoading.value = false
+  }
+}
+
+function addMemory() {
+  editForm.id = 0
+  editForm.category = 'fact'
+  editForm.content = ''
+  editVisible.value = true
+}
+
+function editMemory(item) {
+  editForm.id = item.id
+  editForm.category = item.category || 'fact'
+  editForm.content = item.content || ''
+  editVisible.value = true
+}
+
+async function saveMemory() {
+  const content = editForm.content.trim()
+  if (!content) {
+    ElMessage({message: t('aiMemoryEmpty'), type: 'warning', plain: true, grouping: true})
+    return
+  }
+  editLoading.value = true
+  try {
+    await aiMemorySave({id: editForm.id || undefined, category: editForm.category, content})
+    editVisible.value = false
+    ElMessage({message: t('aiMemorySaved'), type: 'success', plain: true, grouping: true})
+    await loadMemory()
+  } catch (e) {
+    //错误提示已由 axios 拦截器统一处理
+  } finally {
+    editLoading.value = false
+  }
+}
+
+function removeMemory(item) {
+  ElMessageBox.confirm(t('aiMemoryDeleteConfirm'), t('aiMemoryDelete'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning',
+  }).then(async () => {
+    try {
+      await aiMemoryRemove([item.id])
+      ElMessage({message: t('aiMemoryDeleted'), type: 'success', plain: true, grouping: true})
+      await loadMemory()
+    } catch (e) {
+      //错误提示已由 axios 拦截器统一处理
+    }
+  }).catch(() => {
+  })
+}
+
+function clearMemory() {
+  ElMessageBox.confirm(t('aiMemoryClearConfirm'), t('aiMemoryClear'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning',
+  }).then(async () => {
+    try {
+      await aiMemoryClear()
+      memoryProfile.value = ''
+      memoryList.value = []
+      ElMessage({message: t('aiMemoryCleared'), type: 'success', plain: true, grouping: true})
+    } catch (e) {
+      //错误提示已由 axios 拦截器统一处理
+    }
+  }).catch(() => {
+  })
+}
+
+function editProfile() {
+  ElMessageBox.prompt(t('aiMemoryProfilePrompt'), t('aiMemoryProfileTitle'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    inputType: 'textarea',
+    inputValue: memoryProfile.value,
+  }).then(async ({value}) => {
+    try {
+      await aiMemorySaveProfile(value || '')
+      memoryProfile.value = value || ''
+      ElMessage({message: t('aiMemoryProfileSaved'), type: 'success', plain: true, grouping: true})
+    } catch (e) {
+      //错误提示已由 axios 拦截器统一处理
+    }
+  }).catch(() => {
+  })
+}
 </script>
 
 <style scoped lang="scss">
@@ -832,6 +1034,150 @@ function clearConversation() {
     gap: 5px;
     color: var(--el-text-color-secondary);
     font-size: 13px;
+  }
+
+  .head-memory {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+}
+
+//AI 记忆面板
+.memory-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 120px;
+
+  .memory-desc {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--el-text-color-secondary);
+  }
+
+  .memory-block {
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: var(--el-fill-color-blank);
+  }
+
+  .block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .block-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .block-count {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .profile-text {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--el-text-color-regular);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .profile-empty,
+  .memory-empty {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+    padding: 6px 0;
+  }
+
+  .memory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .memory-item {
+    border: 1px solid var(--el-border-color-extra-light);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: var(--el-fill-color-light);
+  }
+
+  .item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .item-cat {
+    font-size: 11px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  .item-time {
+    font-size: 11px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .item-content {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--el-text-color-regular);
+    margin: 6px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .item-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .item-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--el-color-primary);
+    cursor: pointer;
+
+    &.is-danger {
+      color: var(--el-color-danger);
+    }
+  }
+
+  .memory-footer {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+}
+
+.edit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+
+  .edit-label {
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+  }
+
+  .edit-select {
+    width: 170px;
   }
 }
 

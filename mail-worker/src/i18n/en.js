@@ -89,6 +89,10 @@ const en = {
 	aiSendMailDailyLimit: 'The daily sending limit for this account has been reached. Please try again tomorrow.',
 	aiSendMailNeedReview: 'This email did not pass the send review and was rejected. Please confirm the recipient and content again in the chat.',
 	aiSendMailDefaultSubject: '(No subject)',
+	aiSendMailNoSender: 'I still do not know which mailbox to send from. Please tell me which email address to use for this email~',
+	aiSendMailSenderInvalid: 'That sender mailbox is not available. Please use a mailbox you own, or the AI mailbox configured in System Settings.',
+	aiMemoryEmpty: 'Memory content cannot be empty.',
+	aiMemoryNotExist: 'This memory does not exist or has already been deleted.',
 	perms: {
 		"邮件": "Emails",
 		"邮件发送": "Send Email",

@@ -89,6 +89,10 @@ const zh = {
 	aiSendMailDailyLimit: '今天用这个账号发信的次数已达上限, 明天再来吧',
 	aiSendMailNeedReview: '这封邮件没有通过发信审查, 已拒绝发送。请在对话里重新确认收件人与内容。',
 	aiSendMailDefaultSubject: '(无主题)',
+	aiSendMailNoSender: '还不知道用哪个邮箱发信呢, 请告诉鲸娘这封邮件要用哪个邮箱发件~',
+	aiSendMailSenderInvalid: '这个发件邮箱不可用, 请换成主人自己名下的邮箱, 或系统设置里配置给 AI 的邮箱',
+	aiMemoryEmpty: '记忆内容不能为空',
+	aiMemoryNotExist: '这条记忆不存在或已被删除',
 	perms: {
 		"邮件": "邮件",
 		"邮件发送": "邮件发送",

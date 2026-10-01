@@ -22,3 +22,26 @@ export function aiAssistantPlan(
 export function aiAssistantExecute(actions) {
     return http.post('/ai/assistant/execute', {actions}, {timeout: 300 * 1000, noMsg: true})
 }
+
+//AI 记忆与用户画像: 记忆面板读取列表与画像
+export function aiMemoryDetail() {
+    return http.get('/ai/memory', {noMsg: true})
+}
+
+//新增或修改一条记忆, 带 id 表示修改
+export function aiMemorySave(data) {
+    return http.post('/ai/memory/save', data)
+}
+
+export function aiMemoryRemove(ids) {
+    return http.post('/ai/memory/remove', {ids})
+}
+
+export function aiMemoryClear() {
+    return http.post('/ai/memory/clear')
+}
+
+//手动保存用户画像
+export function aiMemorySaveProfile(content) {
+    return http.post('/ai/memory/profile', {content})
+}

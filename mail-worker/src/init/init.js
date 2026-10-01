@@ -38,8 +38,35 @@ const dbInit = {
 		await this.v3_7DB(c);
 		await this.v3_8DB(c);
 		await this.v3_9DB(c);
+		await this.v4_0DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v4_0DB(c) {
+
+		//AI 记忆与用户画像: 记忆按用户存多条, 画像每人一条
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ai_memory (
+					ai_memory_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id INTEGER NOT NULL,
+					category TEXT NOT NULL DEFAULT 'fact',
+					content TEXT NOT NULL,
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+					update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`),
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ai_profile (
+					user_id INTEGER PRIMARY KEY,
+					content TEXT NOT NULL DEFAULT '',
+					memory_count INTEGER NOT NULL DEFAULT 0,
+					update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`),
+				c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_ai_memory_user ON ai_memory(user_id, ai_memory_id)`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	async v3_9DB(c) {
