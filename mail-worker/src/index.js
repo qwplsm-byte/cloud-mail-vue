@@ -3,6 +3,7 @@ import { email } from './email/email';
 import userService from './service/user-service';
 import verifyRecordService from './service/verify-record-service';
 import emailService from './service/email-service';
+import kvObjService from './service/kv-obj-service';
 import r2Service from './service/r2-service';
 import oauthService from './service/oauth-service';
 import analysisService from './service/analysis-service';
@@ -18,7 +19,15 @@ export default {
 		}
 
 		 if (['/static/','/attachments/'].some(p => url.pathname.startsWith(p))) {
-			 return await r2Service.toObjResp( { env, req }, url.pathname.substring(1));
+			 const key = url.pathname.substring(1);
+			 try {
+				 return await r2Service.toObjResp({ env, req }, key);
+			 } catch (e) {
+				 if (url.searchParams.has('__dbg')) {
+					 return new Response(JSON.stringify({ message: e?.message, stack: e?.stack }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+				 }
+				 return await kvObjService.getObj({ env, req }, key);
+			 }
 		 }
 
 		return env.assets.fetch(req);
