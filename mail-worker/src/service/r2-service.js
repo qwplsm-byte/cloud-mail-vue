@@ -179,7 +179,7 @@ const r2Service = {
 		const total = obj.size;
 		const start = obj.range?.offset ?? offset ?? 0;
 		const size = obj.range?.length ?? length ?? (total - start);
-		const partial = !!obj.range;
+		const partial = !!matched && !!obj.range;
 
 		const headers = {
 			'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
