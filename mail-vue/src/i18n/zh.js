@@ -384,6 +384,7 @@ const zh = {
     r2DirectUploadFormDesc: '在 Cloudflare 控制台创建 R2 API 令牌；存储桶需与 Worker 的 R2 绑定为同一个，并允许本站域名跨域上传（CORS）',
     configured: '已配置',
     fileTooLargeMsg: '文件不能超过 {size}',
+    videoUnsupportedMsg: '当前浏览器无法解码该视频(常见于 HEVC/H.265 编码的 MKV)，请改用 H.264 编码的 MP4 后再上传',
     uploadFailMsg: '上传失败，请重试',
     customDomainDesc: 'Worker 自定义域',
     show: '显示',

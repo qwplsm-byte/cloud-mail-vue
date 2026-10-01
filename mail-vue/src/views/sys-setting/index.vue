@@ -1160,7 +1160,7 @@ import {debounce} from 'lodash-es'
 import {isDomain, isEmail, isIpUrl} from "@/utils/verify-utils.js";
 import loading from "@/components/loading/index.vue";
 import {getTextWidth} from "@/utils/text.js";
-import {fileToBase64, uploadToPresignedUrl, isVideoFile, resolveContentType, MEDIA_ACCEPT} from "@/utils/file-utils.js"
+import {fileToBase64, uploadToPresignedUrl, isVideoFile, resolveContentType, canPlayVideoFile, MEDIA_ACCEPT} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
 import axios from "axios";
 
@@ -1936,7 +1936,7 @@ function openLayoutCut() {
   doc.setAttribute('type', 'file')
   doc.setAttribute('accept', MEDIA_ACCEPT)
   doc.click()
-  doc.onchange = (e) => {
+  doc.onchange = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     //单个对象超过 5GB 无法用一次预签名 PUT 完成, 提前拦截避免上传到一半失败
@@ -1945,6 +1945,17 @@ function openLayoutCut() {
         message: t('fileTooLargeMsg', { size: '5GB' }),
         type: "warning",
         plain: true
+      })
+      return
+    }
+    //视频先本地探测能否解码: 编码不被浏览器支持(如 mkv 中的 HEVC/H.265)时上传会成功,
+    //但播放只有黑屏, 因此必须在保存前拦下并给出可操作的提示
+    if (isVideoFile(file) && !(await canPlayVideoFile(file))) {
+      ElMessage({
+        message: t('videoUnsupportedMsg'),
+        type: "error",
+        plain: true,
+        duration: 6000
       })
       return
     }

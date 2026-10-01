@@ -1,6 +1,6 @@
 <template>
-  <div class="layout" :class="{ 'has-wallpaper': wallpaper }">
-    <div v-if="wallpaper" class="wallpaper">
+  <div class="layout" :class="{ 'has-wallpaper': wallpaper && !wallpaperFailed }">
+    <div v-if="wallpaper && !wallpaperFailed" class="wallpaper">
       <video
           v-if="wallpaperIsVideo"
           :key="wallpaper"
@@ -11,6 +11,7 @@
           loop
           playsinline
           @canplay="startWallpaperVideo"
+          @error="wallpaperFailed = true"
       ></video>
       <div
           v-else
@@ -71,6 +72,15 @@ const wallpaper = computed(() => {
 const maskOpacity = computed(() => {
   const value = Number(settingStore.settings.layoutBackgroundMask)
   return (Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0) / 100
+})
+
+/*
+ * 已保存的背景视频若浏览器无法解码(例如 mkv 中的 HEVC/H.265), 播放区会一直黑屏。
+ * 这里在 video 报错时回退到默认背景, 避免整屏黑掉; 换背景后重新尝试。
+ */
+const wallpaperFailed = ref(false)
+watch(() => settingStore.settings.layoutBackground, () => {
+  wallpaperFailed.value = false
 })
 
 const wallpaperVideoRef = ref(null)

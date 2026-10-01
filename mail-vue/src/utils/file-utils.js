@@ -33,6 +33,42 @@ export function resolveContentType(file) {
     return EXT_CONTENT_TYPE[getExtName(file?.name || '')] || 'application/octet-stream'
 }
 
+/*
+ * 用本地 ObjectURL 探测浏览器能否真正解码该视频。
+ * 容器/编码的支持完全取决于浏览器实现: 例如 Chrome/Edge/Firefox 都无法解码 mkv 里的
+ * HEVC(H.265) 轨, 此时上传照样成功, 但播放只会是一片黑屏。
+ * 只有解出首帧(loadeddata/canplay)才算支持, 超时或 error 都判定为不支持。
+ */
+export function canPlayVideoFile(file, timeout = 10000) {
+    return new Promise((resolve) => {
+        const url = URL.createObjectURL(file)
+        const video = document.createElement('video')
+        let done = false
+
+        const finish = (ok) => {
+            if (done) return
+            done = true
+            clearTimeout(timer)
+            video.onloadeddata = null
+            video.oncanplay = null
+            video.onerror = null
+            video.removeAttribute('src')
+            video.load()
+            URL.revokeObjectURL(url)
+            resolve(ok)
+        }
+
+        const timer = setTimeout(() => finish(false), timeout)
+        video.muted = true
+        video.playsInline = true
+        video.preload = 'auto'
+        video.onloadeddata = () => finish(true)
+        video.oncanplay = () => finish(true)
+        video.onerror = () => finish(false)
+        video.src = url
+    })
+}
+
 export function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;

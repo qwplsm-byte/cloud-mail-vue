@@ -384,6 +384,7 @@ const en = {
     r2DirectUploadFormDesc: 'Create an R2 API token in the Cloudflare dashboard. The bucket must be the same one bound to the Worker R2 binding, and must allow this site origin via CORS',
     configured: 'Configured',
     fileTooLargeMsg: 'File must not exceed {size}',
+    videoUnsupportedMsg: 'This browser cannot decode the video (common for MKV encoded with HEVC/H.265). Please upload an H.264 MP4 instead',
     uploadFailMsg: 'Upload failed, please retry',
     customDomainDesc: 'Worker custom domain',
     show: 'Show',
