@@ -52,6 +52,16 @@ const routes = [
                 }
             },
             {
+                path: '/drive',
+                name: 'drive',
+                component: () => import('@/views/drive/index.vue'),
+                meta: {
+                    title: 'drive',
+                    name: 'drive',
+                    menu: true
+                }
+            },
+            {
                 path: '/ai',
                 name: 'ai',
                 component: () => import('@/views/ai/index.vue'),

@@ -80,6 +80,13 @@
           </el-menu-item>
         </el-sub-menu>
 
+        <!-- 网盘：每个登录用户都有自己的空间 -->
+        <el-menu-item @click="router.push({name: 'drive'})" index="drive"
+                      :class="route.meta.name === 'drive' ? 'is-active' : ''">
+          <Icon icon="mdi:cloud-outline" :width="19" :height="19" />
+          <span class="menu-name">{{$t('drive')}}</span>
+        </el-menu-item>
+
         <!-- AI 助手：位于管理之下、个人设置之上 -->
         <el-menu-item @click="router.push({name: 'ai'})" index="ai"
                       :class="route.meta.name === 'ai' ? 'is-active' : ''">

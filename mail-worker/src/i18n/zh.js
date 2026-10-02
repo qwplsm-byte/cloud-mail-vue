@@ -93,6 +93,13 @@ const zh = {
 	aiSendMailSenderInvalid: '这个发件邮箱不可用, 请换成主人自己名下的邮箱, 或系统设置里配置给 AI 的邮箱',
 	aiMemoryEmpty: '记忆内容不能为空',
 	aiMemoryNotExist: '这条记忆不存在或已被删除',
+	driveFileNotExist: '文件或文件夹不存在',
+	driveNothing: '请先选择文件或文件夹',
+	driveNameRequired: '名称不能为空',
+	driveNameInvalid: '名称不能包含 / \\ : * ? " < > | 等字符',
+	driveNameExists: '同级目录下已存在同名文件',
+	driveMoveIntoSelf: '不能移动到自身或其子目录',
+	driveUploadEmpty: '上传文件不能为空',
 	perms: {
 		"邮件": "邮件",
 		"邮件发送": "邮件发送",

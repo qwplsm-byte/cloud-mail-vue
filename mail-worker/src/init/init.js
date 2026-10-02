@@ -39,8 +39,37 @@ const dbInit = {
 		await this.v3_8DB(c);
 		await this.v3_9DB(c);
 		await this.v4_0DB(c);
+		await this.v4_1DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v4_1DB(c) {
+
+		//AI 网盘: 文件与文件夹共用一张表, 用 parent_id 表达层级
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS drive_file (
+					drive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id INTEGER NOT NULL,
+					parent_id INTEGER NOT NULL DEFAULT 0,
+					name TEXT NOT NULL,
+					is_dir INTEGER NOT NULL DEFAULT 0,
+					object_key TEXT NOT NULL DEFAULT '',
+					size INTEGER NOT NULL DEFAULT 0,
+					mime_type TEXT NOT NULL DEFAULT '',
+					tags TEXT NOT NULL DEFAULT '[]',
+					summary TEXT NOT NULL DEFAULT '',
+					ai_time TEXT NOT NULL DEFAULT '',
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+					update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`),
+				c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_drive_file_user_parent ON drive_file(user_id, parent_id)`),
+				c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_drive_file_user_name ON drive_file(user_id, name)`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	async v4_0DB(c) {

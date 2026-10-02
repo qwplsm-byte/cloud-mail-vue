@@ -93,6 +93,13 @@ const en = {
 	aiSendMailSenderInvalid: 'That sender mailbox is not available. Please use a mailbox you own, or the AI mailbox configured in System Settings.',
 	aiMemoryEmpty: 'Memory content cannot be empty.',
 	aiMemoryNotExist: 'This memory does not exist or has already been deleted.',
+	driveFileNotExist: 'The file or folder does not exist',
+	driveNothing: 'Please select a file or folder first',
+	driveNameRequired: 'Name cannot be empty',
+	driveNameInvalid: 'Name cannot contain / \\ : * ? " < > |',
+	driveNameExists: 'A file with the same name already exists in this folder',
+	driveMoveIntoSelf: 'Cannot move an item into itself or its subfolder',
+	driveUploadEmpty: 'Uploaded file cannot be empty',
 	perms: {
 		"邮件": "Emails",
 		"邮件发送": "Send Email",
