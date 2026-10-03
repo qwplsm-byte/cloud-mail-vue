@@ -551,6 +551,8 @@ const zh = {
     driveStatFolders: '{count} 个文件夹',
     driveStatSize: '已用 {size}',
     driveUpload: '上传',
+    driveFileManager: '文件管理器',
+    driveFileManagerTip: '从手机文件管理器选择文件，支持 zip、7z、rar、mp4、mkv、mp3 等格式',
     driveNewFolder: '新建文件夹',
     driveSearchPlaceholder: '搜索文件或文件夹',
     driveRefresh: '刷新',

@@ -18,7 +18,20 @@ const EXT_CONTENT_TYPE = {
     m4v: 'video/x-m4v',
     ogv: 'video/ogg',
     ogg: 'video/ogg',
-    mkv: 'video/x-matroska'
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    wmv: 'video/x-ms-wmv',
+    flv: 'video/x-flv',
+    zip: 'application/zip',
+    '7z': 'application/x-7z-compressed',
+    rar: 'application/vnd.rar',
+    tar: 'application/x-tar',
+    gz: 'application/gzip',
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    flac: 'audio/flac',
+    wav: 'audio/wav',
+    aac: 'audio/aac'
 }
 
 export function isVideoFile(file) {
@@ -32,6 +45,27 @@ export function resolveContentType(file) {
     if (file?.type) return file.type
     return EXT_CONTENT_TYPE[getExtName(file?.name || '')] || 'application/octet-stream'
 }
+
+/*
+ * 手机浏览器对 zip/7z/rar/mkv 等文件常给不出 MIME(file.type 为空), 直接上传会被存成
+ * octet-stream, 影响后续预览与播放。这里按扩展名补齐后重建 File;
+ * 类型已知或映射不到时原样返回, 不产生任何副作用。
+ */
+export function ensureContentType(file) {
+    if (!file || file.type) return file
+    const type = EXT_CONTENT_TYPE[getExtName(file.name || '')]
+    if (!type) return file
+    try {
+        return new File([file], file.name, {type, lastModified: file.lastModified})
+    } catch (e) {
+        return file
+    }
+}
+
+// 文件管理器入口的 accept: 必须是 "*/*" 而不是留空 ——
+// 手机浏览器(尤其微信/QQ 等内置 WebView)在 accept 为空时往往只弹出相册/拍照,
+// 带上 "*/*" 才会提供"文件管理器/文档"入口, 从而能选中 zip、7z、rar、mp4、mkv、mp3 等任意格式。
+export const FILE_MANAGER_ACCEPT = '*/*'
 
 /*
  * 用本地 ObjectURL 探测浏览器能否真正解码该视频。
