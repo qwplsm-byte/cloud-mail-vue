@@ -45,7 +45,7 @@
         <!-- 管理与系统：合并同类管理功能 -->
         <el-sub-menu index="manage" v-perm="['analysis:query','user:query','role:query','all-email:query','reg-key:query','setting:query']">
           <template #title>
-            <Icon icon="majesticons:settings-gear-line" :width="19" :height="19" />
+            <Icon icon="mdi:shield-crown-outline" :width="19" :height="19" />
             <span class="menu-name">{{$t('manage')}}</span>
           </template>
           <el-menu-item @click="router.push({name: 'analysis'})" index="analysis" v-perm="'analysis:query'"
