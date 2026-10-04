@@ -208,7 +208,7 @@ const aiMemoryService = {
 			const blocks = [];
 
 			if (profileRow?.content) {
-				blocks.push(`【主人画像】\n${profileRow.content}`);
+				blocks.push(`【昴的画像】\n${profileRow.content}`);
 			}
 
 			if (rows.length) {
@@ -218,10 +218,10 @@ const aiMemoryService = {
 				const lines = others.map(row => `- ${row.content}`);
 
 				if (sender) {
-					lines.unshift(`- 主人指定的默认发件邮箱: ${sender.content}`);
+					lines.unshift(`- 昴指定的默认发件邮箱: ${sender.content}`);
 				}
 
-				blocks.push(`【我记住的关于主人的事(可信, 可直接使用)】\n${lines.join('\n')}`);
+				blocks.push(`【爱蜜莉雅记住的关于昴的事(可信, 可直接使用; 旧记录里的"主人"就是昴)】\n${lines.join('\n')}`);
 			}
 
 			return blocks.join('\n\n');
