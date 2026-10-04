@@ -50,10 +50,6 @@
           <Icon icon="mdi:upload" :width="15" :height="15"/>
           <span>{{ $t('driveUpload') }}</span>
         </el-button>
-        <el-button class="tool-btn" size="small" :title="$t('driveFileManagerTip')" @click="pickFromFileManager">
-          <Icon icon="mdi:folder-open-outline" :width="15" :height="15"/>
-          <span>{{ $t('driveFileManager') }}</span>
-        </el-button>
         <el-button class="tool-btn" size="small" @click="newFolder">
           <Icon icon="mdi:folder-plus-outline" :width="15" :height="15"/>
           <span>{{ $t('driveNewFolder') }}</span>
@@ -66,9 +62,8 @@
           <Icon icon="mdi:refresh" :width="16" :height="16"/>
           <span>{{ $t('driveRefresh') }}</span>
         </el-button>
-        <input ref="fileInputRef" class="file-input" type="file" multiple @change="onFileChange"/>
-        <!-- accept="*/*" 让手机端调起系统文件管理器(而非相册), 可选 zip/7z/rar/mp4/mkv/mp3 等任意格式 -->
-        <input ref="fileManagerInputRef" class="file-input" type="file" multiple
+        <!-- accept="*/*" 让手机端调起系统文件管理器(而非只弹相册), 可选 zip/7z/rar/mp4/mkv/mp3 等任意格式 -->
+        <input ref="fileInputRef" class="file-input" type="file" multiple
                accept="*/*" @change="onFileChange"/>
       </div>
     </div>
@@ -296,7 +291,6 @@ const {t} = i18n.global
 
 const tableRef = ref(null)
 const fileInputRef = ref(null)
-const fileManagerInputRef = ref(null)
 
 //当前浏览的目录: id 为 0 表示根目录, name 为空时面包屑显示根标签
 const currentId = ref(0)
@@ -643,11 +637,6 @@ async function downloadSelected() {
 
 function pickFiles() {
   fileInputRef.value?.click()
-}
-
-//手机端从系统文件管理器选择文件(相册入口选不到 zip/7z/rar/mp4/mkv/mp3 等)
-function pickFromFileManager() {
-  fileManagerInputRef.value?.click()
 }
 
 function onFileChange(e) {

@@ -62,11 +62,6 @@ export function ensureContentType(file) {
     }
 }
 
-// 文件管理器入口的 accept: 必须是 "*/*" 而不是留空 ——
-// 手机浏览器(尤其微信/QQ 等内置 WebView)在 accept 为空时往往只弹出相册/拍照,
-// 带上 "*/*" 才会提供"文件管理器/文档"入口, 从而能选中 zip、7z、rar、mp4、mkv、mp3 等任意格式。
-export const FILE_MANAGER_ACCEPT = '*/*'
-
 /*
  * 用本地 ObjectURL 探测浏览器能否真正解码该视频。
  * 容器/编码的支持完全取决于浏览器实现: 例如 Chrome/Edge/Firefox 都无法解码 mkv 里的

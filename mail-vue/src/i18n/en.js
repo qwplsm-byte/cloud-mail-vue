@@ -550,8 +550,6 @@ const en = {
     driveStatFolders: '{count} folders',
     driveStatSize: '{size} used',
     driveUpload: 'Upload',
-    driveFileManager: 'File manager',
-    driveFileManagerTip: 'Pick files from your phone file manager: zip, 7z, rar, mp4, mkv, mp3 and more',
     driveNewFolder: 'New folder',
     driveSearchPlaceholder: 'Search files or folders',
     driveRefresh: 'Refresh',
