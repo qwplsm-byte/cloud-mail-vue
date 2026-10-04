@@ -1,7 +1,7 @@
 import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
-//用户画像: 每个用户一条, 由 AI 记忆归纳而来, 新会话时注入提示词让鲸娘"记得主人"
+//用户画像: 每个用户一条, 由 AI 记忆归纳而来, 新会话时注入提示词让爱蜜莉雅"记得主人"
 export const aiProfile = sqliteTable('ai_profile', {
 	userId: integer('user_id').primaryKey(),
 	content: text('content').notNull().default(''),

@@ -164,7 +164,7 @@ export async function email(message, env, ctx) {
 
 		emailRow = await emailService.completeReceive({ env }, account ? emailConst.status.RECEIVE : emailConst.status.NOONE, emailRow.emailId);
 
-		//AI 邮件聊天: 新邮件交给鲸娘自己判断要不要回; 只有落进她邮箱主人的账号才会真的回, 由服务里判定
+		//AI 邮件聊天: 新邮件交给爱蜜莉雅自己判断要不要回; 只有落进她邮箱主人的账号才会真的回, 由服务里判定
 		if (account && aiMailStatus) {
 			ctx.waitUntil(
 				aiAgentService.autoReplyMail({ env }, {

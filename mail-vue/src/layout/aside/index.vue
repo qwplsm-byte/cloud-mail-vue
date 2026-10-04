@@ -113,7 +113,7 @@ import router from "@/router/index.js";
 import { useRoute } from "vue-router";
 import {Icon} from "@iconify/vue";
 import {useSettingStore} from "@/store/setting.js";
-//AI 助手改用鲸娘头像, 侧边栏与对话页保持同一形象
+//AI 助手头像(暂用鲸娘图片), 侧边栏与对话页保持同一形象
 import whaleAvatar from "@/assets/whale-girl.png";
 
 defineProps({
@@ -142,7 +142,7 @@ const route = useRoute();
   transition: max-width .32s cubic-bezier(.25, .8, .3, 1), padding .32s cubic-bezier(.25, .8, .3, 1);
 }
 
-/* 侧边栏 AI 图标: 鲸娘头像, 尺寸与其它菜单图标一致 */
+/* 侧边栏 AI 图标: AI 助手头像, 尺寸与其它菜单图标一致 */
 .menu-avatar {
   width: 19px;
   height: 19px;

@@ -19,7 +19,7 @@ const MEMORY_PROMPT_MAX = 24;
 const PROFILE_MAX = 1500;
 //记忆类别
 const MEMORY_CATEGORY = ['fact', 'preference', 'identity', 'contact', 'sendFrom', 'other'];
-const MEMORY_CATEGORY_DESC = 'fact=关于主人的事实, preference=主人的偏好与习惯, identity=主人的身份信息(称呼/职业/所在地等), contact=主人常联系的人或邮箱, sendFrom=主人指定给鲸娘用的默认发件邮箱, other=其它';
+const MEMORY_CATEGORY_DESC = 'fact=关于主人的事实, preference=主人的偏好与习惯, identity=主人的身份信息(称呼/职业/所在地等), contact=主人常联系的人或邮箱, sendFrom=主人指定给爱蜜莉雅用的默认发件邮箱, other=其它';
 
 const AI_TIMEOUT_MS = 120 * 1000;
 const AI_MAX_TOKENS = 2048;
@@ -37,7 +37,7 @@ const MEMORY_EXTRACT_PROMPT = `你在维护一个邮件助手对"主人"的长�
 抽取规则:
 - category 取值: ${MEMORY_CATEGORY_DESC}
 - 只记主人自己说过、且长期有效的信息(称呼、身份、职业、所在地、偏好、习惯、常联系的人、重要日期、明确要求记住的事)。
-- 不要记: 一次性的操作指令(如"删掉推广邮件")、临时话题、鲸娘自己说的话、任何密码或验证码。
+- 不要记: 一次性的操作指令(如"删掉推广邮件")、临时话题、爱蜜莉雅自己说的话、任何密码或验证码。
 - 主人明确指定了默认发件邮箱时, category 用 sendFrom, content 只填邮箱地址本身。
 - 主人表达了对某个邮箱地址/联系人的固定称呼或关系时, category 用 contact, content 写成"张三 <zhangsan@example.com>"这种形式。
 - 没有新信息时 facts 返回空数组。
@@ -246,14 +246,14 @@ const aiMemoryService = {
 		const history = extraHistory
 			.filter(item => item?.content)
 			.slice(-4)
-			.map(item => `${item.role === 'user' ? '主人' : '鲸娘'}: ${String(item.content).slice(0, 300)}`)
+			.map(item => `${item.role === 'user' ? '主人' : '爱蜜莉雅'}: ${String(item.content).slice(0, 300)}`)
 			.join('\n');
 
 		const messages = [
 			{ role: 'system', content: MEMORY_EXTRACT_PROMPT },
 			{
 				role: 'user',
-				content: `${history ? `最近对话:\n${history}\n\n` : ''}主人这轮说:\n${text.slice(0, 1500)}\n\n鲸娘的回复:\n${String(reply || '').slice(0, 800) || '(无)'}\n\n已有记忆:\n${memorized || '(还没有任何记忆)'}`
+				content: `${history ? `最近对话:\n${history}\n\n` : ''}主人这轮说:\n${text.slice(0, 1500)}\n\n爱蜜莉雅的回复:\n${String(reply || '').slice(0, 800) || '(无)'}\n\n已有记忆:\n${memorized || '(还没有任何记忆)'}`
 			}
 		];
 

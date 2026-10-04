@@ -255,7 +255,7 @@
       </el-button>
     </div>
 
-    <!-- AI 记忆与用户画像: 查看/增删鲸娘记住的长期信息 -->
+    <!-- AI 记忆与用户画像: 查看/增删爱蜜莉雅记住的长期信息 -->
     <el-drawer v-model="memoryVisible" :title="$t('aiMemoryTitle')" size="420px" class="memory-drawer">
       <div v-loading="memoryLoading" class="memory-panel">
         <div class="memory-desc">{{ $t('aiMemoryDesc') }}</div>
@@ -299,7 +299,7 @@
       </div>
     </el-drawer>
 
-    <!-- 记忆条目新增/修改: sendFrom 类别会作为鲸娘的默认发件邮箱 -->
+    <!-- 记忆条目新增/修改: sendFrom 类别会作为爱蜜莉雅的默认发件邮箱 -->
     <el-dialog v-model="editVisible" :title="editForm.id ? $t('aiMemoryEdit') : $t('aiMemoryAdd')"
                width="420px" append-to-body>
       <div class="edit-row">
@@ -333,7 +333,7 @@ import {
 } from "@/request/ai.js";
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
-//AI 助手形象: 侧边栏与对话页共用同一张鲸娘头像
+//AI 助手形象: 侧边栏与对话页共用同一张头像(暂为鲸娘图片)
 import whaleAvatar from "@/assets/whale-girl.png";
 
 defineOptions({
