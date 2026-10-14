@@ -339,6 +339,8 @@ onMounted(() => {
 </script>
 <style scoped lang="scss">
 .box {
+  height: 100%;
+  overflow-y: auto;
   padding: 40px 40px;
 
   @media (max-width: 767px) {

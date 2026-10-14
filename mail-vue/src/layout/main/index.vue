@@ -170,6 +170,9 @@ const handleResize = () => {
   border: var(--stage-border, 1px solid var(--glass-border));
   box-shadow: var(--glass-shadow), var(--glass-highlight);
   overflow: hidden;
+  /* 行高锁死在舞台高度内, 内容再长也只让子项内部滚动,
+     否则隐式行会被内容撑高、溢出部分被 overflow:hidden 直接裁掉(如设置页"删除账户"被顶出)。 */
+  grid-template-rows: minmax(0, 1fr);
   @media (max-width: 767px) {
     margin: var(--stage-margin-mobile, 0 8px 8px);
     border-radius: var(--stage-radius-mobile, var(--radius-md));
