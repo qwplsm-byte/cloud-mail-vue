@@ -225,6 +225,12 @@ const loginService = {
 			throw new BizError(t('IncorrectPwd'));
 		}
 
+		return await this.issueToken(c, userRow);
+	},
+
+	//登录成功后签发 token 并写入会话记录, 密码登录与通行密钥登录共用
+	async issueToken(c, userRow) {
+
 		const uuid = uuidv4();
 		const jwt = await JwtUtils.generateToken(c,{ userId: userRow.userId, token: uuid });
 

@@ -100,6 +100,13 @@ const en = {
 	driveNameExists: 'A file with the same name already exists in this folder',
 	driveMoveIntoSelf: 'Cannot move an item into itself or its subfolder',
 	driveUploadEmpty: 'Uploaded file cannot be empty',
+	passkeyChallengeExpired: 'This verification has expired, please try again',
+	passkeyNotExist: 'This passkey is not registered or has been removed',
+	passkeyVerifyFail: 'Passkey verification failed',
+	passkeyRegisterFail: 'Failed to register the passkey',
+	passkeyRegistered: 'This passkey has already been registered',
+	passkeyNameRequired: 'Name cannot be empty',
+	passkeyNameTooLong: 'Name cannot exceed 60 characters',
 	perms: {
 		"邮件": "Emails",
 		"邮件发送": "Send Email",

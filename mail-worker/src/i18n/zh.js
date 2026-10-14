@@ -100,6 +100,13 @@ const zh = {
 	driveNameExists: '同级目录下已存在同名文件',
 	driveMoveIntoSelf: '不能移动到自身或其子目录',
 	driveUploadEmpty: '上传文件不能为空',
+	passkeyChallengeExpired: '本次验证已过期, 请重新发起',
+	passkeyNotExist: '这个通行密钥未注册或已被删除',
+	passkeyVerifyFail: '通行密钥验证失败',
+	passkeyRegisterFail: '通行密钥注册失败',
+	passkeyRegistered: '该通行密钥已经注册过了',
+	passkeyNameRequired: '名称不能为空',
+	passkeyNameTooLong: '名称不能超过 60 个字符',
 	perms: {
 		"邮件": "邮件",
 		"邮件发送": "邮件发送",

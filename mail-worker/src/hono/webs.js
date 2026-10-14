@@ -22,4 +22,5 @@ import '../api/telegram-api'
 import '../api/oauth-api'
 import '../api/ai-agent-api'
 import '../api/drive-api'
+import '../api/passkey-api'
 export default app;

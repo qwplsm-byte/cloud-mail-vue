@@ -44,6 +44,11 @@
           <el-button class="btn" type="primary" @click="submit" :loading="loginLoading"
           >{{ $t('loginBtn') }}
           </el-button>
+          <el-button v-if="passkeySupported" class="btn" style="margin-top: 10px" @click="passkeyLogin"
+                     :loading="passkeyLoading">
+            <Icon icon="mdi:fingerprint" width="18" height="18" style="margin-right: 8px" />
+            {{ $t('passkeyLogin') }}
+          </el-button>
           <el-button v-for="p in oauthProviders" :key="p.key" class="btn" style="margin-top: 10px" @click="oauthLogin(p.key)">
             <el-avatar v-if="p.iconType === 'image'" :src="p.icon" :size="18" style="margin-right: 10px" />
             <Icon v-else :icon="p.icon" width="18" height="18" style="margin-right: 10px" />
@@ -168,6 +173,8 @@ import {loginUserInfo} from "@/request/my.js";
 import {permsToRouter} from "@/perm/perm.js";
 import {useI18n} from "vue-i18n";
 import {oauthBindUser, oauthLinuxDoLogin, oauthGithubLogin, oauthGoogleLogin} from "@/request/ouath.js";
+import {startAuthentication} from "@simplewebauthn/browser";
+import {passkeyLoginOptions, passkeyLoginVerify} from "@/request/passkey.js";
 
 const {t} = useI18n();
 const accountStore = useAccountStore();
@@ -176,6 +183,9 @@ const uiStore = useUiStore();
 const settingStore = useSettingStore();
 const route = useRoute();
 const loginLoading = ref(false)
+const passkeyLoading = ref(false)
+//通行密钥需要安全上下文与浏览器支持
+const passkeySupported = ref(typeof window !== 'undefined' && !!window.PublicKeyCredential && window.isSecureContext)
 const bindLoading = ref(false)
 const oauthLoading = ref(false);
 const showBindForm = ref(false);
@@ -436,6 +446,26 @@ const submit = () => {
   }).finally(() => {
     loginLoading.value = false
   })
+}
+
+//通行密钥登录: 取 options -> 调起系统验证 -> 回服务端换 token
+async function passkeyLogin() {
+
+  if (passkeyLoading.value) return
+
+  passkeyLoading.value = true
+
+  try {
+    const {options, nonce} = await passkeyLoginOptions()
+    const response = await startAuthentication({optionsJSON: options})
+    const data = await passkeyLoginVerify({nonce, response})
+    await saveToken(data.token)
+  } catch (e) {
+    //用户取消弹窗或设备上没有可用通行密钥, 不必打扰
+    console.warn('通行密钥登录未完成', e)
+  } finally {
+    passkeyLoading.value = false
+  }
 }
 
 async function saveToken(token) {

@@ -42,6 +42,33 @@
         <el-option label="English" value="en" @pointerdown.prevent.stop="changeLang('en')"/>
       </el-select>
     </div>
+    <div class="passkey" v-if="passkeySupported">
+      <div class="title">{{$t('passkeyManage')}}</div>
+      <div class="passkey-desc">{{$t('passkeyDesc')}}</div>
+      <div class="passkey-list" v-if="passkeyItems.length">
+        <div class="passkey-item" v-for="item in passkeyItems" :key="item.id">
+          <div class="passkey-info">
+            <Icon icon="mdi:fingerprint" width="20" height="20" class="passkey-icon"/>
+            <div class="passkey-meta">
+              <div class="passkey-name">{{ item.name }}</div>
+              <div class="passkey-sub">
+                {{$t('passkeyCreateTime')}}：{{ item.createTime }}
+                <span v-if="item.lastUsedTime"> · {{$t('passkeyLastUsed')}}：{{ item.lastUsedTime }}</span>
+                <span v-else> · {{$t('passkeyNeverUsed')}}</span>
+              </div>
+            </div>
+          </div>
+          <div class="passkey-ops">
+            <span class="edit-name" @click="renamePasskey(item)">{{$t('rename')}}</span>
+            <span class="edit-name del" @click="deletePasskey(item)">{{$t('delete')}}</span>
+          </div>
+        </div>
+      </div>
+      <div class="passkey-empty" v-else>{{$t('passkeyEmpty')}}</div>
+      <div>
+        <el-button type="primary" :loading="passkeyAddLoading" @click="addPasskey">{{$t('passkeyAdd')}}</el-button>
+      </div>
+    </div>
     <div class="del-email" v-perm="'my:delete'">
       <div class="title">{{$t('deleteUser')}}</div>
       <div style="color: var(--regular-text-color);">
@@ -61,7 +88,16 @@
   </div>
 </template>
 <script setup>
-import {reactive, ref, defineOptions} from 'vue'
+import {reactive, ref, defineOptions, onMounted} from 'vue'
+import {Icon} from "@iconify/vue";
+import {startRegistration} from "@simplewebauthn/browser";
+import {
+  passkeyRegisterOptions,
+  passkeyRegisterVerify,
+  passkeyList,
+  passkeyRename,
+  passkeyDelete
+} from "@/request/passkey.js";
 import {resetPassword, userDelete} from "@/request/my.js";
 import {useUserStore} from "@/store/user.js";
 import router from "@/router/index.js";
@@ -206,6 +242,100 @@ function submitPwd() {
 
 }
 
+//通行密钥管理: 需要安全上下文且浏览器支持
+const passkeySupported = ref(typeof window !== 'undefined' && !!window.PublicKeyCredential && window.isSecureContext)
+const passkeyAddLoading = ref(false)
+const passkeyItems = ref([])
+
+async function loadPasskeys() {
+  if (!passkeySupported.value) return
+  try {
+    const {items} = await passkeyList()
+    passkeyItems.value = items || []
+  } catch (e) {
+    console.warn('获取通行密钥列表失败', e)
+  }
+}
+
+//添加: 取注册 options -> 调起系统验证 -> 回服务端持久化
+async function addPasskey() {
+
+  if (passkeyAddLoading.value) return
+
+  passkeyAddLoading.value = true
+
+  try {
+    const {options, nonce} = await passkeyRegisterOptions()
+    const response = await startRegistration({optionsJSON: options})
+    await passkeyRegisterVerify({nonce, response})
+    ElMessage({
+      message: t('passkeyAddSuccess'),
+      type: 'success',
+      plain: true,
+    })
+    await loadPasskeys()
+  } catch (e) {
+    //用户主动取消系统弹窗时不报错
+    if (e?.name !== 'NotAllowedError') {
+      ElMessage({
+        message: t('passkeyAddFail'),
+        type: 'error',
+        plain: true,
+      })
+    }
+    console.warn('添加通行密钥未完成', e)
+  } finally {
+    passkeyAddLoading.value = false
+  }
+}
+
+function renamePasskey(item) {
+  ElMessageBox.prompt(t('passkeyRenamePrompt'), t('passkeyRenameTitle'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    inputValue: item.name,
+    inputValidator: (value) => !!(value || '').trim()
+  }).then(({value}) => {
+    const name = (value || '').trim()
+    if (!name || name === item.name) return
+    passkeyRename({id: item.id, name}).then(() => {
+      item.name = name
+      ElMessage({
+        message: t('passkeyRenamed'),
+        type: 'success',
+        plain: true,
+      })
+    })
+  }).catch(() => {})
+}
+
+function deletePasskey(item) {
+  ElMessageBox.confirm(t('passkeyDeleteConfirm'), t('delete'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    passkeyDelete({id: item.id}).then(() => {
+      passkeyItems.value = passkeyItems.value.filter(p => p.id !== item.id)
+      ElMessage({
+        message: t('passkeyDeleteSuccess'),
+        type: 'success',
+        plain: true,
+      })
+    }).catch(() => {
+      ElMessage({
+        message: t('passkeyDeleteFail'),
+        type: 'error',
+        plain: true,
+      })
+    })
+  }).catch(() => {})
+}
+
+onMounted(() => {
+  loadPasskeys()
+})
+
 </script>
 <style scoped lang="scss">
 .box {
@@ -285,6 +415,82 @@ function submitPwd() {
 
     .language-select {
       width: 100px;
+    }
+  }
+
+  .passkey {
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 40px;
+
+    .passkey-desc {
+      color: var(--regular-text-color);
+    }
+
+    .passkey-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .passkey-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+
+      .passkey-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        overflow: hidden;
+
+        .passkey-icon {
+          flex-shrink: 0;
+          color: var(--regular-text-color);
+        }
+
+        .passkey-meta {
+          overflow: hidden;
+
+          .passkey-name {
+            font-weight: bold;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+          }
+
+          .passkey-sub {
+            color: var(--regular-text-color);
+            font-size: 12px;
+            margin-top: 4px;
+          }
+        }
+      }
+
+      .passkey-ops {
+        flex-shrink: 0;
+        display: flex;
+        gap: 12px;
+
+        .edit-name {
+          color: #4dabff;
+          cursor: pointer;
+        }
+
+        .edit-name.del {
+          color: var(--el-color-danger);
+        }
+      }
+    }
+
+    .passkey-empty {
+      color: var(--regular-text-color);
     }
   }
 

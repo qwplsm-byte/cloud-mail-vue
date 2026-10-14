@@ -610,6 +610,26 @@ const en = {
     driveRetry: 'Retry',
     driveDownloadFail: 'Download failed, please try again later',
     driveSelectFirst: 'Please select a file or folder first',
+    //Passkey
+    passkey: 'Passkey',
+    passkeyLogin: 'Sign in with a passkey',
+    passkeyLogining: 'Verifying your passkey…',
+    passkeyManage: 'Passkeys',
+    passkeyDesc: 'Sign in with your fingerprint, face or a security key — safer than a password, and nothing to remember',
+    passkeyAdd: 'Add a passkey',
+    passkeyAddSuccess: 'Passkey added',
+    passkeyAddFail: 'Failed to add the passkey',
+    passkeyEmpty: 'No passkey added yet',
+    passkeyCreateTime: 'Added',
+    passkeyLastUsed: 'Last used',
+    passkeyNeverUsed: 'Never used',
+    passkeyDeleteConfirm: 'This device will no longer be able to sign in with it. Delete this passkey?',
+    passkeyDeleteSuccess: 'Passkey deleted',
+    passkeyDeleteFail: 'Failed to delete',
+    passkeyRenameTitle: 'Name',
+    passkeyRenamePrompt: 'Give this passkey a name so you can tell your devices apart',
+    passkeyRenamed: 'Name updated',
+    passkeyNotSupported: 'Passkeys are not supported on this browser or device',
 }
 
 export default en

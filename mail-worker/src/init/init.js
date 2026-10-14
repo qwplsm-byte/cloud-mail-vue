@@ -40,8 +40,35 @@ const dbInit = {
 		await this.v3_9DB(c);
 		await this.v4_0DB(c);
 		await this.v4_1DB(c);
+		await this.v4_2DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v4_2DB(c) {
+
+		//通行密钥(WebAuthn): 一个用户可注册多个凭证, credential_id 全局唯一便于免用户名登录
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS passkey (
+					passkey_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id INTEGER NOT NULL,
+					credential_id TEXT NOT NULL,
+					public_key TEXT NOT NULL,
+					counter INTEGER NOT NULL DEFAULT 0,
+					transports TEXT NOT NULL DEFAULT '',
+					aaguid TEXT NOT NULL DEFAULT '',
+					name TEXT NOT NULL DEFAULT '',
+					last_used_time TEXT NOT NULL DEFAULT '',
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+					update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`),
+				c.env.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_passkey_credential ON passkey(credential_id)`),
+				c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_passkey_user ON passkey(user_id)`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	async v4_1DB(c) {
