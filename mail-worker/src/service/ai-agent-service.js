@@ -369,10 +369,13 @@ const aiAgentService = {
 			throw new BizError(t('aiNotConfigured'));
 		}
 
-		const stats = await this.buildStats(c, userId);
-		const isAdmin = await this.isAdmin(c, userId, 'user:add');
-		//把长期记忆与用户画像带上, 让爱蜜莉雅像"记得昴"一样接着聊
-		const memoryContext = await aiMemoryService.context(c, userId);
+		//下面这些取数彼此独立, 并行拉取, 把调用模型前的串行等待压到一次(其中 buildStats 还要对收件做聚合)
+		const [stats, isAdmin, memoryContext] = await Promise.all([
+			this.buildStats(c, userId),
+			this.isAdmin(c, userId, 'user:add'),
+			//把长期记忆与用户画像带上, 让爱蜜莉雅像"记得昴"一样接着聊
+			aiMemoryService.context(c, userId)
+		]);
 		const dateInfo = [
 			`当前日期: ${dayjs().format('YYYY-MM-DD')}`,
 			`邮箱概览(系统自动附上, 仅当本轮真的涉及邮件时才参考; 纯闲聊一律无视, 更不许据此主动聊起邮件): ${stats}`,

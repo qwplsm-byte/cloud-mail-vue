@@ -1,6 +1,7 @@
 //免 Key 的网页搜索: 直接抓取各搜索引擎的结果页, 零配置、零成本
 //稳定性取决于目标站点(可能限流/改版), 因此任何失败都返回空数组, 由上层降级为普通聊天
 //可选引擎: duckduckgo(默认) / bing / baidu / mojeek / searxng(需传入自定义实例地址)
+//提速: 未指定引擎时各引擎并行竞速, 谁先出结果就用谁, 最坏等待从"逐个超时累加"降到"单个超时"
 
 const ENGINES = ['duckduckgo', 'bing', 'baidu', 'mojeek', 'searxng'];
 //用户指定了引擎时优先用它, 没结果或出错再按这个顺序兜底
@@ -54,20 +55,55 @@ const webSearchService = {
 		const limit = Math.min(Math.max(Number(options.limit) || 5, 1), 10);
 		const chain = this.resolveChain(options.engine);
 		const endpoint = String(options.endpoint || '').trim();
+		const picked = String(options.engine || '').trim().toLowerCase();
 
-		for (const engine of chain) {
-			try {
-				const results = await this.runEngine(engine, q, limit, endpoint);
+		//用户明确指定了引擎(含自定义 searxng)时先尊重它, 失败再用其余引擎兜底
+		if (ENGINES.includes(picked)) {
+			const primary = await this.raceEngines([picked], q, limit, endpoint);
 
-				if (results.length) {
-					return results;
-				}
-			} catch (e) {
-				console.warn(`网页搜索失败 (${engine}): ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+			if (primary.length) {
+				return primary;
 			}
+
+			return this.raceEngines(FALLBACK_CHAIN.filter(item => item !== picked), q, limit, endpoint);
 		}
 
-		return [];
+		//未指定引擎: 各引擎并行竞速, 最先返回非空结果者胜
+		return this.raceEngines(chain, q, limit, endpoint);
+	},
+
+	//并行跑一组引擎, 谁先给出非空结果就立即采用; 全部为空/失败则返回空数组
+	raceEngines(list, q, limit, endpoint) {
+		return new Promise(resolve => {
+
+			if (!list.length) {
+				resolve([]);
+				return;
+			}
+
+			let pending = list.length;
+
+			for (const engine of list) {
+				this.runEngine(engine, q, limit, endpoint)
+					.then(results => {
+						if (results && results.length) {
+							resolve(results);
+							return;
+						}
+
+						if (--pending === 0) {
+							resolve([]);
+						}
+					})
+					.catch(e => {
+						console.warn(`网页搜索失败 (${engine}): ${e?.name || 'Error'} | ${e?.message || '(empty)'}`);
+
+						if (--pending === 0) {
+							resolve([]);
+						}
+					});
+			}
+		});
 	},
 
 	//指定了合法引擎就把它排在最前, 其余按默认链兜底
