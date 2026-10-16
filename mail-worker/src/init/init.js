@@ -41,8 +41,32 @@ const dbInit = {
 		await this.v4_0DB(c);
 		await this.v4_1DB(c);
 		await this.v4_2DB(c);
+		await this.v4_3DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v4_3DB(c) {
+
+		//AI 对话记录: 多设备登录同一账号时从服务端同步, (user_id, msg_id) 唯一便于多设备 upsert 合并
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ai_message (
+					ai_message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id INTEGER NOT NULL,
+					msg_id TEXT NOT NULL,
+					role TEXT NOT NULL DEFAULT 'user',
+					content TEXT NOT NULL DEFAULT '',
+					payload TEXT NOT NULL DEFAULT '',
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+					update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`),
+				c.env.db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_message_user_msg ON ai_message(user_id, msg_id)`),
+				c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_ai_message_user ON ai_message(user_id)`)
+			]);
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	async v4_2DB(c) {

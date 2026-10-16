@@ -23,6 +23,19 @@ export function aiAssistantExecute(actions) {
     return http.post('/ai/assistant/execute', {actions}, {timeout: 300 * 1000, noMsg: true})
 }
 
+//AI 对话记录: 存服务端, 多设备登录同一账号时同步
+export function aiChatHistory() {
+    return http.get('/ai/chat/history', {noMsg: true})
+}
+
+export function aiChatSave(messages) {
+    return http.post('/ai/chat/save', {messages}, {noMsg: true})
+}
+
+export function aiChatClear() {
+    return http.post('/ai/chat/clear', {noMsg: true})
+}
+
 //AI 记忆与用户画像: 记忆面板读取列表与画像
 export function aiMemoryDetail() {
     return http.get('/ai/memory', {noMsg: true})

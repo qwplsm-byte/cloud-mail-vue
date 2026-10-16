@@ -319,12 +319,15 @@
 </template>
 
 <script setup>
-import {computed, defineOptions, nextTick, onBeforeUnmount, reactive, ref, watch} from "vue";
+import {computed, defineOptions, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {ElMessage, ElMessageBox} from "element-plus";
 import {
   aiAssistantExecute,
   aiAssistantPlan,
+  aiChatClear,
+  aiChatHistory,
+  aiChatSave,
   aiMemoryClear,
   aiMemoryDetail,
   aiMemoryRemove,
@@ -344,8 +347,7 @@ const {t} = i18n.global
 
 const userStore = useUserStore()
 
-//对话记录按用户存到 localStorage, 刷新页面后仍能恢复
-const STORAGE_PREFIX = 'ai_assistant_chat_'
+//对话记录存服务端, 同一账号在不同浏览器/设备间同步
 const MAX_STORED = 40
 
 const scrollRef = ref(null)
@@ -361,7 +363,7 @@ const MAX_IMAGE_EDGE = 1280
 const MAX_TEXT_CHARS = 12000
 //可以当纯文本读的扩展名, 避免把二进制文件读成乱码
 const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'csv', 'log', 'yml', 'yaml', 'ini', 'conf', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'go', 'sql', 'sh']
-const messages = ref(loadMessages())
+const messages = ref([])
 const elapsed = ref(0)
 
 //AI 记忆面板: 画像 + 记忆条目, 打开时拉取
@@ -426,23 +428,83 @@ function saveSearchPref() {
   }
 }
 
-let seed = messages.value.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0)
-let timerId = null
-
-function storageKey() {
-  return STORAGE_PREFIX + (userStore.user?.email || 'anonymous')
+//消息 id 需在同一用户下全局唯一: 多设备各自生成, 用随机串避免 id 冲突
+function newMsgId() {
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
 }
 
-function loadMessages() {
+let timerId = null
+//初次从服务端拉取期间不触发回写, 避免把刚读到的记录再存一遍
+let hydrating = true
+let saveTimer = null
+
+function buildStored() {
+  return messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error, sources, searchFailed, attachments: files}) => ({
+    id, role, content, plan, status, results, error, sources, searchFailed,
+    //附件只留文件名/类型: 图片 base64 太大且不需要长期保存
+    attachments: files ? files.map(({key, type, name}) => ({key, type, name})) : undefined
+  }))
+}
+
+//改动频繁(追加/状态变化), 合并成一次提交
+function scheduleSave() {
+  if (hydrating) {
+    return
+  }
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    aiChatSave(buildStored()).catch(() => {
+      //保存失败不影响本地使用, 下次改动会再尝试
+    })
+  }, 600)
+}
+
+watch(messages, scheduleSave, {deep: true})
+
+//进入页面时从服务端拉取该账号的对话, 实现跨设备同步
+async function loadMessages() {
   try {
-    const raw = localStorage.getItem(storageKey())
-    const list = raw ? JSON.parse(raw) : []
+    const data = await aiChatHistory()
+    const list = Array.isArray(data?.messages) ? data.messages : []
+
+    //服务端还没有记录, 但本浏览器存在旧版本地记录时, 一次性搬上去, 避免老用户历史丢失
+    if (!list.length) {
+      const legacy = takeLegacyMessages()
+
+      if (legacy.length) {
+        messages.value = legacy
+        aiChatSave(buildStored()).catch(() => {
+        })
+        return
+      }
+    }
+
+    messages.value = list
+  } catch (e) {
+    //拉取失败保持空对话, 不影响页面使用
+  } finally {
+    hydrating = false
+    scrollToBottom()
+  }
+}
+
+//旧版本对话记在 localStorage, 读取后即删除, 只用于搬运一次
+function takeLegacyMessages() {
+  try {
+    const key = 'ai_assistant_chat_' + (userStore.user?.email || 'anonymous')
+    const raw = localStorage.getItem(key)
+
+    if (!raw) {
+      return []
+    }
+
+    localStorage.removeItem(key)
+    const list = JSON.parse(raw)
 
     if (!Array.isArray(list)) {
       return []
     }
 
-    //刷新后不能停留在"进行中"状态
     return list.map(item => ({
       ...item,
       loading: false,
@@ -452,21 +514,6 @@ function loadMessages() {
     return []
   }
 }
-
-function saveMessages() {
-  try {
-    const list = messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error, sources, searchFailed, attachments: files}) => ({
-      id, role, content, plan, status, results, error, sources, searchFailed,
-      //附件只留文件名: 图片 base64 落盘会撑爆 localStorage
-      attachments: files ? files.map(({key, type, name}) => ({key, type, name})) : undefined
-    }))
-    localStorage.setItem(storageKey(), JSON.stringify(list))
-  } catch (e) {
-    //忽略写入失败(隐私模式/超出配额)
-  }
-}
-
-watch(messages, saveMessages, {deep: true})
 
 function startTimer() {
   stopTimer()
@@ -483,7 +530,20 @@ function stopTimer() {
   }
 }
 
-onBeforeUnmount(stopTimer)
+//进入页面即拉取服务端对话
+onMounted(loadMessages)
+
+onBeforeUnmount(() => {
+  stopTimer()
+  //离开前把尚未落库的改动补存一次
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+    if (!hydrating) {
+      aiChatSave(buildStored()).catch(() => {})
+    }
+  }
+})
 
 function errorText(e) {
   //ECONNABORTED 是前端主动超时, 换成更好理解的中文提示
@@ -771,9 +831,9 @@ async function submit(text, files = []) {
     saveSearchPref()
   }
 
-  messages.value.push({id: ++seed, role: 'user', content: text, attachments: files.length ? files : undefined})
+  messages.value.push({id: newMsgId(), role: 'user', content: text, attachments: files.length ? files : undefined})
   //必须是响应式对象, 否则请求回来后直接改 bot.xxx 不会触发视图更新和持久化 watch
-  const bot = reactive({id: ++seed, role: 'assistant', content: '', loading: true})
+  const bot = reactive({id: newMsgId(), role: 'assistant', content: '', loading: true})
   messages.value.push(bot)
   loading.value = true
   startTimer()
@@ -864,6 +924,9 @@ function clearConversation() {
     type: 'warning',
   }).then(() => {
     messages.value = []
+    //同时清掉服务端记录, 否则换设备会重新拉回旧对话
+    aiChatClear().catch(() => {
+    })
   }).catch(() => {
   })
 }
