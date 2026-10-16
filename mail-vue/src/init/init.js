@@ -5,7 +5,7 @@ import {loginUserInfo} from "@/request/my.js";
 import {permsToRouter} from "@/perm/perm.js";
 import router from "@/router";
 import {websiteConfig} from "@/request/setting.js";
-import i18n from "@/i18n/index.js";
+import { setLocale } from "@/i18n/index.js";
 
 export async function init() {
     document.title = '\u200B'
@@ -21,7 +21,7 @@ export async function init() {
         settingStore.lang = lang
     }
 
-    i18n.global.locale.value = settingStore.lang
+    settingStore.lang = await setLocale(settingStore.lang)
 
     let setting = null;
 

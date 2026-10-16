@@ -3,7 +3,10 @@
     <div :class="accountShow && hasPerm('account:query') ? 'block-show' : 'block-hide'" @click="uiStore.accountShow = false"></div>
     <account  :class="accountShow && hasPerm('account:query') ? 'show' : 'hide'" />
     <router-view class="main-view" v-slot="{ Component,route }">
-      <keep-alive :include="['email','all-email','send','sys-setting','star','user','role','analysis','reg-key','draft','ai']">
+      <!-- 只常驻高频、轻量的邮件相关视图（切换需秒开）；
+           管理后台页与 analysis(内含 echarts，单页 500KB+) 不缓存，
+           离开即释放，避免长期占用内存。 -->
+      <keep-alive :include="['email','all-email','send','star','draft','ai']">
         <component :is="Component" :key="route.name"/>
       </keep-alive>
     </router-view>

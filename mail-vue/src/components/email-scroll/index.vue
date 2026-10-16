@@ -35,7 +35,7 @@
       <UseVirtualList ref="scrollbarRef"
                         @scroll="onScroll"
                         :list="list"
-                        :options="{ itemHeight: itemHeight, overscan: 15 }"
+                        :options="{ itemHeight: itemHeight, overscan: 8 }"
                         class="virtual"
                         style="height: 100%"
                         v-if="!loading && emailList.length > 0"
@@ -375,16 +375,26 @@ onMounted(() => {
       email.formatCreateTime = fromNow(email.createTime);
     })
   }, 1000 * 60);
+  window.addEventListener('resize', handleResize)
+  window.addEventListener('wheel', handleWheel)
 })
 
 onUnmounted(() => {
   clearInterval(timer)
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('wheel', handleWheel)
 })
 
 getEmailList()
 
-window.onresize = () => {
+function handleResize() {
   isMobile.value = innerWidth < 1367
+}
+
+function handleWheel() {
+  if (dropdownShow.value) {
+    dropdownRef.value.handleClose();
+  }
 }
 
 function onScroll(e) {
@@ -454,14 +464,14 @@ watch(() => arrivedState.bottom, (isBottom) => {
 });
 
 watch(
-    () => emailList.map(item => item.checked),
-    () => {
-      checkedEmailCount.value = emailList.length
+    () => emailList.filter(item => item.checked).length,
+    (count) => {
+      // 只在选中数量变化时重算全选/半选态，避免对整列表做深比较
+      checkedEmailCount.value = count;
       if (emailList.length > 0) {
         updateCheckStatus();
       }
-    },
-    {deep: true}
+    }
 );
 
 
@@ -485,12 +495,6 @@ watch(() => emailStore.addStarEmailId, () => {
       email.isStar = 1
     }
   })
-})
-
-window.addEventListener('wheel', (event) => {
-  if (dropdownShow.value) {
-    dropdownRef.value.handleClose();
-  }
 })
 
 function openReply(email) {
@@ -981,7 +985,10 @@ function loadData() {
   cursor: pointer;
   align-items: center;
   position: relative;
-  transition: background 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  /* 只过渡背景色：box-shadow 过渡会带来整行重绘开销 */
+  transition: background-color 0.15s ease-in-out;
+  /* 隔离每行的布局/样式作用域，长列表滚动时减少重排范围 */
+  contain: layout style;
   height: 48px;
   @media (max-width: 1366px) {
     height: 83px;
