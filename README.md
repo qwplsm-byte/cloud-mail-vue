@@ -1,158 +1,116 @@
 <p align="center">
     <img src="doc/demo/logo.png" width="80px" />
-    <h1 align="center">Cloud Mail</h1>
-    <p align="center">基于 Cloudflare 的简约响应式邮箱服务，支持邮件发送、附件收发 🎉</p> 
-    <p align="center">
-        简体中文 | <a href="/README-en.md" style="margin-left: 5px">English </a>
-    </p>
-    <p align="center">
-        <a href="https://github.com/maillab/cloud-mail/tree/main?tab=MIT-1-ov-file" target="_blank" >
-            <img src="https://img.shields.io/badge/license-MIT-green" />
-        </a>    
-        <a href="https://github.com/maillab/cloud-mail/releases" target="_blank" >
-            <img src="https://img.shields.io/github/v/release/maillab/cloud-mail" alt="releases" />
-        </a>  
-        <a href="https://github.com/maillab/cloud-mail/issues" >
-            <img src="https://img.shields.io/github/issues/maillab/cloud-mail" alt="issues" />
-        </a>  
-        <a href="https://github.com/maillab/cloud-mail/stargazers" target="_blank">
-            <img src="https://img.shields.io/github/stars/maillab/cloud-mail" alt="stargazers" />
-        </a>  
-        <a href="https://github.com/maillab/cloud-mail/forks" target="_blank" >
-            <img src="https://img.shields.io/github/forks/maillab/cloud-mail" alt="forks" />
-        </a>
-    </p>
-    <p align="center">
-        <a href="https://trendshift.io/repositories/20459" target="_blank" >
-            <img src="https://trendshift.io/api/badge/repositories/20459" alt="trendshift" >
-        </a>
-    </p>
+    <h1 align="center">Cloud Mail（二改版）</h1>
+    <p align="center">基于 Cloudflare 的 Serverless 响应式邮箱服务 · 二改增强版</p>
 </p>
-
 
 ## 项目简介
 
-只需要一个域名，就可以创建多个不同的邮箱，类似各大邮箱平台，本项目支持署到 Cloudflare Workers ，降低服务器成本，搭建自己的邮箱服务
+只需一个域名即可创建多个邮箱，可部署到 Cloudflare Workers，低成本搭建自己的邮箱服务。
 
-## 项目展示
+本仓库是二次开发（二改）版本，基于上游开源项目 [maillab/cloud-mail](https://github.com/maillab/cloud-mail)
+演进，在原版基础上重做了界面并扩展了 AI 能力，代码与原版差异较大，故独立维护。
 
-- [在线演示](https://skymail.ink)<br>
-- [部署文档](https://doc.skymail.ink)<br>
+## 与原版的主要差异
 
-| ![](/doc/demo/demo1.png) | ![](/doc/demo/demo2.png) |
-|-----------------------|-----------------------|
-| ![](/doc/demo/demo3.png) | ![](/doc/demo/demo4.png) |
+- **界面重做**：整套毛玻璃（液态玻璃）视觉，内置浅色 / 深色 / 跟随系统 / Android 壁纸取色主题；触屏与窄屏自动降低模糊。
+- **AI 助手**：支持记忆与用户画像、主动发信、指定发件邮箱；对话记录服务端存储，账号跨端同步。
+- **AI 邮件分类**：收件箱自动分类（账号 / 通知 / 账单 / 推广 / 其他）。
+- **AI 网盘**：文件管理与 AI 打标签、智能归类。
+- **通行密钥登录**：支持 WebAuthn / Passkey。
+- **对象存储直传**：R2 预签名直传，图片 / 视频 / GIF 直传，支持 <5GB 大视频。
+- **背景视频**：登录背景支持视频与 mkv 等格式，解码失败自动回退。
+- **性能优化**：构建分包、语言包按需加载、路由 chunk 空闲预取、视图缓存、邮件列表虚拟滚动。
 
+## 项目结构
 
-
-
-## 功能介绍
-
-- **💰 低成本使用**： 可部署到 Cloudflare Workers 降低服务器成本
-
-- **💻 响应式设计**：响应式布局自动适配PC和大部分手机端浏览器
-
-- **📧 邮件发送**：集成Resend发送邮件，支持群发，内嵌图片和附件发送，发送状态查看
-
-- **🛡️ 管理员功能**：可以对用户，邮件进行管理，RABC权限控制对功能及使用资源限制
-
-- **📦 附件收发**：支持收发附件，使用R2对象存储保存和下载文件
-
-- **🔔 邮件推送**：接收邮件后可以转发到TG机器人或其他服务商邮箱
-
-- **📡 开放API**：支持使用API批量生成用户，多条件查询邮件 
-
-- **🔢 验证码识别**：使用Workers AI，自动识别邮件验证码 
-
-- **📈 数据可视化**：使用ECharts对系统数据详情，用户邮件增长可视化显示
-
-- **🎨 个性化设置**：可以自定义网站标题，登录背景，透明度
-
-- **🤖 人机验证**：集成Turnstile人机验证，防止人机批量注册
-
-- **📜 更多功能**：正在开发中...
-
-
+```
+cloud-mail-vue
+├── mail-worker                # 后端项目（Hono + Cloudflare Workers）
+│   ├── src
+│   │   ├── api                # 接口层
+│   │   ├── const              # 项目常量
+│   │   ├── dao                # 数据访问层
+│   │   ├── email              # 邮件处理
+│   │   ├── entity             # 数据库实体
+│   │   ├── error              # 自定义异常
+│   │   ├── hono               # web 框架、拦截器、全局异常
+│   │   ├── i18n               # 国际化
+│   │   ├── init               # 初始化
+│   │   ├── model              # 响应体封装
+│   │   ├── security           # 身份权限认证
+│   │   ├── service            # 业务服务层
+│   │   ├── template           # 消息模板
+│   │   ├── utils              # 工具类
+│   │   └── index.js           # 入口文件
+│   ├── package.json
+│   └── wrangler.toml          # 项目配置
+│
+├── mail-vue                   # 前端项目（Vue 3 + Vite）
+│   ├── src
+│   │   ├── axios              # axios 实例与拦截器
+│   │   ├── components         # 通用组件（邮件虚拟列表等）
+│   │   ├── echarts            # ECharts 按需注册
+│   │   ├── i18n               # 国际化（按需加载）
+│   │   ├── icons              # Iconify 图标集
+│   │   ├── init               # 应用初始化
+│   │   ├── layout             # 主体布局
+│   │   ├── perm               # 权限与权限路由
+│   │   ├── request            # API 封装
+│   │   ├── router             # 路由与守卫、chunk 预取
+│   │   ├── store              # 全局状态管理（Pinia）
+│   │   ├── theme              # 主题与配色
+│   │   ├── utils              # 工具类
+│   │   ├── views              # 页面组件
+│   │   ├── App.vue
+│   │   ├── main.js
+│   │   └── style.css          # 全局样式与设计变量
+│   ├── package.json
+│   └── vite.config.js
+│
+└── .github/workflows/deploy-cloudflare.yml   # 推送即自动构建部署
+```
 
 ## 技术栈
 
 - **平台**：[Cloudflare Workers](https://developers.cloudflare.com/workers/)
+- **后端框架**：[Hono](https://hono.dev/) + [Drizzle ORM](https://orm.drizzle.team/)
+- **前端框架**：[Vue 3](https://vuejs.org/) + [Vite](https://vitejs.dev/)
+- **UI 框架**：[Element Plus](https://element-plus.org/)
+- **邮件发送**：[Resend](https://resend.com/)
+- **缓存 / 数据库 / 存储**：[Cloudflare KV](https://developers.cloudflare.com/kv/) / [D1](https://developers.cloudflare.com/d1/) / [R2](https://developers.cloudflare.com/r2/)
 
-- **Web框架**：[Hono](https://hono.dev/)
+## 本地开发
 
-- **ORM：**[Drizzle](https://orm.drizzle.team/)
+```bash
+# 后端 mail-worker
+cd mail-worker
+pnpm install
+pnpm dev            # 本地启动 Worker（wrangler-dev.toml）
 
-- **前端框架**：[Vue3](https://vuejs.org/) 
-
-- **UI框架**：[Element Plus](https://element-plus.org/) 
-
-- **邮件推送：** [Resend](https://resend.com/)
-
-- **缓存**：[Cloudflare KV](https://developers.cloudflare.com/kv/)
-
-- **数据库**：[Cloudflare D1](https://developers.cloudflare.com/d1/)
-
-- **文件存储**：[Cloudflare R2](https://developers.cloudflare.com/r2/)
-
-## 目录结构
-
-```
-cloud-mail
-├── mail-worker				    # worker后端项目
-│   ├── src                  
-│   │   ├── api	 			    # api接口层			
-│   │   ├── const  			    # 项目常量
-│   │   ├── dao                 # 数据访问层
-│   │   ├── email			    # 邮件处理接收
-│   │   ├── entity			    # 数据库实体
-│   │   ├── error			    # 自定义异常
-│   │   ├── hono			    # web框架配置、拦截器、全局异常等
-│   │   ├── i18n			    # 语言国际化
-│   │   ├── init			    # 数据库缓存初始化
-│   │   ├── model			    # 响应体数据封装
-│   │   ├── security			# 身份权限认证
-│   │   ├── service			    # 业务服务层
-│   │   ├── template			# 消息模板
-│   │   ├── utils			    # 工具类
-│   │   └── index.js			# 入口文件
-│   ├── pageckge.json			# 项目依赖
-│   └── wrangler.toml			# 项目配置
-│
-├── mail-vue				    # vue前端项目
-│   ├── src
-│   │   ├── axios 			    # axios配置
-│   │   ├── components			# 自定义组件
-│   │   ├── echarts			    # echarts组件导入
-│   │   ├── i18n			    # 语言国际化
-│   │   ├── init			    # 入站初始化
-│   │   ├── layout			    # 主体布局组件
-│   │   ├── perm			    # 权限认证
-│   │   ├── request			    # api接口
-│   │   ├── router			    # 路由配置
-│   │   ├── store			    # 全局状态管理
-│   │   ├── utils			    # 工具类
-│   │   ├── views			    # 页面组件
-│   │   ├── app.vue			    # 入口组件
-│   │   ├── main.js			    # 入口js
-│   │   └── style.css			# 全局css
-│   ├── package.json			# 项目依赖
-└── └── env.release				# 项目配置
+# 前端 mail-vue
+cd mail-vue
+npm install
+npm run dev         # 读取 .env.dev，默认请求 http://127.0.0.1:8787/api
 ```
 
-## 赞助
+前端环境变量（`mail-vue/.env.*`）：`VITE_APP_TITLE`、`VITE_BASE_URL`（后端 API 地址）、`VITE_PWA_NAME`、`VITE_OUT_DIR`。
 
-<a href="https://doc.skymail.ink/support.html" >
-<img width="170px" src="./doc/images/support.png" alt="">
-</a>
+## 部署
+
+仓库已内置 GitHub Actions 工作流（[deploy-cloudflare.yml](.github/workflows/deploy-cloudflare.yml)）：
+推送到 `main` 且改动命中 `mail-worker/**` 或 `mail-vue/**` 时，自动安装依赖、构建前端、执行
+`wrangler deploy` 并初始化数据库。
+
+需要在仓库 Secrets / Variables 中配置：`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、
+`JWT_SECRET`、`ADMIN`、`DOMAIN` 等（详见工作流）。
 
 ## 许可证
 
-本项目采用 [MIT](LICENSE) 许可证	
+本项目采用 [MIT](LICENSE) 许可证。
 
+## 致谢与反馈
 
-## 交流
-
-[Telegram](https://t.me/cloud_mail_tg)
-
-
-
+- 上游项目：[maillab/cloud-mail](https://github.com/maillab/cloud-mail)，感谢原作者的开源工作。
+- 本仓库：<https://github.com/qwplsm-byte/cloud-mail-vue>
+- 问题反馈：<https://github.com/qwplsm-byte/cloud-mail-vue/issues>
