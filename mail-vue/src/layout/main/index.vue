@@ -3,10 +3,10 @@
     <div :class="accountShow && hasPerm('account:query') ? 'block-show' : 'block-hide'" @click="uiStore.accountShow = false"></div>
     <account  :class="accountShow && hasPerm('account:query') ? 'show' : 'hide'" />
     <router-view class="main-view" v-slot="{ Component,route }">
-      <!-- 只常驻高频、轻量的邮件相关视图（切换需秒开）；
-           管理后台页与 analysis(内含 echarts，单页 500KB+) 不缓存，
-           离开即释放，避免长期占用内存。 -->
-      <keep-alive :include="['email','all-email','send','star','draft','ai']">
+      <!-- 缓存各菜单视图, 使切回已有页面时免去重新下载/挂载/拉数据, 实现秒开;
+           用 :max 限定缓存数量做 LRU 淘汰, 内存占用有上限。
+           analysis 内含 echarts(单页 500KB+, 实例占内存大)不缓存, 离开即释放。 -->
+      <keep-alive :include="cacheViews" :max="6">
         <component :is="Component" :key="route.name"/>
       </keep-alive>
     </router-view>
@@ -23,6 +23,14 @@ import { hasPerm } from "@/perm/perm.js"
 const settingStore = useSettingStore()
 const uiStore = useUiStore();
 const route = useRoute()
+
+// keep-alive 缓存名单, 与各视图 defineOptions({name}) 一致;
+// 不含 analysis(echarts 重) 与无 name 的 content。:max 控制上限做 LRU 淘汰。
+const cacheViews = [
+  'email', 'send', 'draft', 'star', 'all-email', 'ai',
+  'user', 'role', 'sys-setting', 'reg-key', 'setting', 'drive'
+]
+
 let  innerWidth =  window.innerWidth
 
 let elNotification = null

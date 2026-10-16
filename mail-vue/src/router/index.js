@@ -190,6 +190,13 @@ router.afterEach((to) => {
         uiStore.asideShow = false
     }
 
+    // 首次进入主界面(菜单页)后触发一次空闲预取;
+    // 动态权限路由在登录后才注册, 因此放在这里可同时覆盖"已登录直进"与"登录后跳转"两种情况。
+    if (!prefetchDone && to.meta.menu) {
+        prefetchDone = true
+        prefetchRoutes()
+    }
+
     first = false
 })
 
@@ -200,6 +207,45 @@ function removeLoading() {
     }
 
     doc.remove()
+}
+
+// 是否已触发过路由 chunk 预取
+let prefetchDone = false
+
+/**
+ * 空闲时预取所有已注册路由组件的 chunk。
+ * 每个视图都是懒加载独立 chunk，点击菜单时若现场下载会叠加网络往返造成卡顿；
+ * 提前在浏览器空闲时段把 chunk 拉进缓存，点击即可秒开。
+ */
+export function prefetchRoutes() {
+
+    const loaders = new Set()
+
+    router.getRoutes().forEach(record => {
+        const comp = record.components && record.components.default
+        // 已解析过的组件是对象, 未加载的才是 loader 函数
+        if (typeof comp === 'function') {
+            loaders.add(comp)
+        }
+    })
+
+    const list = [...loaders]
+
+    const run = () => {
+        list.forEach((load, index) => {
+            // 错峰预取, 避免同一时刻并发拉取大量 chunk 抢占带宽影响当前页面
+            setTimeout(() => {
+                Promise.resolve().then(load).catch(() => {
+                })
+            }, index * 150)
+        })
+    }
+
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(run, {timeout: 4000})
+    } else {
+        setTimeout(run, 1500)
+    }
 }
 
 export default router
