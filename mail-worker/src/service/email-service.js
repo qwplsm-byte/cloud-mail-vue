@@ -64,7 +64,8 @@ const emailService = {
 
 		if (isNaN(allReceive)) {
 			let accountRow = await accountService.selectById(c, accountId);
-			allReceive = accountRow.allReceive;
+			//accountId 不存在时不应抛 500, 退化为不限 allReceive
+			allReceive = accountRow ? accountRow.allReceive : 0;
 		}
 
 		const filters = this.emailListFilters({ userId, accountId, type, allReceive, emailId, timeSort, category, hasAtt, subject, content, startTime, endTime });
@@ -854,7 +855,8 @@ const emailService = {
 
 		if (isNaN(allReceive)) {
 			let accountRow = await accountService.selectById(c, accountId);
-			allReceive = accountRow.allReceive;
+			//accountId 不存在时不应抛 500, 退化为不限 allReceive
+			allReceive = accountRow ? accountRow.allReceive : 0;
 		}
 
 		const list = await orm(c).select({ ...emailListColumns }).from(email)

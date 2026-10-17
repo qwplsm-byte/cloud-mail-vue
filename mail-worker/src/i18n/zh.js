@@ -17,6 +17,7 @@ const zh = {
 	noOsSendAtt: '对象存储未配置不能发送附件',
 	disabledSend: '邮件发送功能已停用',
 	oauthDisabled: '该 OAuth 登录未启用',
+	oauthBindExpired: 'OAuth 授权信息已失效，请重新登录',
 	daySendLimit: '发送次数已到达每日限制',
 	totalSendLimit: '发送次数已到达限制',
 	daySendLack: '当日剩余发送次数不足',

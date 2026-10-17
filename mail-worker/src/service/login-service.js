@@ -29,8 +29,9 @@ const loginService = {
 		let { regKey, register, registerVerify, regVerifyCount, minEmailPrefix, emailPrefixFilter } = await settingService.query(c)
 
 		if (oauth) {
+			//OAuth 登录拿不到邮件验证码, 只能跳过邮箱验证;
+			//注册总开关必须尊重站点设置, 否则关闭注册时仍能通过 OAuth 绑定新账号
 			registerVerify = settingConst.registerVerify.CLOSE;
-			register = settingConst.register.OPEN;
 		}
 
 		if (register === settingConst.register.CLOSE) {
@@ -263,11 +264,18 @@ const loginService = {
 	},
 
 	async logout(c, userId) {
-		const token =userContext.getToken(c);
+		const token = await userContext.getToken(c);
 		const authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userId, { type: 'json' });
+		if (!authInfo || !Array.isArray(authInfo.tokens)) {
+			return;
+		}
 		const index = authInfo.tokens.findIndex(item => item === token);
+		//index 为 -1 时不能直接 splice, 否则会误删最后一个会话
+		if (index === -1) {
+			return;
+		}
 		authInfo.tokens.splice(index, 1);
-		await c.env.kv.put(KvConst.AUTH_INFO + userId, JSON.stringify(authInfo));
+		await c.env.kv.put(KvConst.AUTH_INFO + userId, JSON.stringify(authInfo), { expirationTtl: constant.TOKEN_EXPIRE });
 	}
 
 };

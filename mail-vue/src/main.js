@@ -16,6 +16,6 @@ await init()
 bootstrapTheme()
 watchSystemTheme()
 app.use(router).use(i18n).directive('perm',perm)
-app.config.devtools = true;
+app.config.devtools = import.meta.env.DEV;
 
 app.mount('#app');

@@ -6,6 +6,22 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import DOMPurify from 'dompurify'
+
+// 邮件正文来自外部发件人, 必须清洗后再注入: Shadow DOM 只挡 <script>, 挡不住 onerror/onload 这类内联事件
+const FORBID_TAGS = ['script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'base', 'meta', 'link', 'form']
+const FORBID_ATTR = ['srcdoc', 'formaction']
+
+function sanitize(html) {
+  if (!html) return ''
+  const isDocument = /<html[\s>]|<body[\s>]|<!doctype/i.test(html)
+  return DOMPurify.sanitize(html, {
+    WHOLE_DOCUMENT: isDocument,
+    FORBID_TAGS,
+    FORBID_ATTR,
+    ADD_ATTR: ['target'],
+  })
+}
 
 const props = defineProps({
   html: {
@@ -21,13 +37,15 @@ let shadowRoot = null
 function updateContent() {
   if (!shadowRoot) return;
 
+  const html = sanitize(props.html);
+
   // 1. 提取 <body> 的 style 属性（如果存在）
   const bodyStyleRegex = /<body[^>]*style="([^"]*)"[^>]*>/i;
-  const bodyStyleMatch = props.html.match(bodyStyleRegex);
+  const bodyStyleMatch = html.match(bodyStyleRegex);
   const bodyStyle = bodyStyleMatch ? bodyStyleMatch[1] : '';
 
   // 2. 移除 <body> 标签（保留内容）
-  const cleanedHtml = props.html.replace(/<\/?body[^>]*>/gi, '');
+  const cleanedHtml = html.replace(/<\/?body[^>]*>/gi, '');
 
   // 3. 将 body 的 style 应用到 .shadow-content
   shadowRoot.innerHTML = `

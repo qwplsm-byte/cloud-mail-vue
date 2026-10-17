@@ -258,13 +258,10 @@ window.onTurnstileError = (e) => {
   }, 1500)
 };
 
-window.loadAfter = (e) => {
-  console.log('loadAfter')
-}
+//Turnstile 通过 data-after-interactive-callback / data-before-interactive-callback 引用, 保留全局钩子
+window.loadAfter = () => {}
 
-window.loadBefore = (e) => {
-  console.log('loadBefore')
-}
+window.loadBefore = () => {}
 
 const loginOpacity = computed(() => {
   const opacity = settingStore.settings.loginOpacity
@@ -511,8 +508,6 @@ function submitRegister() {
     })
     return
   }
-
-  console.log(registerForm.email)
 
   if (getEmailName(registerForm.email).length < settingStore.settings.minEmailPrefix) {
     ElMessage({

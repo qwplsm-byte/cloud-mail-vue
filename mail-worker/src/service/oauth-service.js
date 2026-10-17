@@ -16,6 +16,10 @@ const oauthService = {
 
 		const oauthRow = await this.getById(c, oauthUserId);
 
+		if (!oauthRow) {
+			throw new BizError(t('oauthBindExpired'));
+		}
+
 		let userRow = await userService.selectByIdIncludeDel(c, oauthRow.userId);
 
 		if (userRow) {

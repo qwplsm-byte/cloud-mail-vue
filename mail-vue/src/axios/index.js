@@ -71,12 +71,9 @@ http.interceptors.response.use((res) => {
     },
     (error) => {
 
-        if (error.status === 403) {
-            location.reload();
-            return;
-        }
-
-        const noMsg = error.config.noMsg;
+        //后端业务错误一律走 HTTP 200 + body.code, 这里只会拿到网络层/CDN 错误
+        //原 error.status === 403 分支恒不成立, 且改成 response.status 后在 CDN 持续 403 时会 reload 死循环, 故移除
+        const noMsg = error.config?.noMsg;
 
         if (noMsg) {
             return Promise.reject(error)
@@ -95,7 +92,6 @@ http.interceptors.response.use((res) => {
                 plain: true,
                 grouping: true
             })
-            ElMessage.error('')
         } else if (error.response) {
             ElMessage({
                 message: i18n.global.t('serverBusyErrorMsg'),

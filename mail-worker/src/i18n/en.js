@@ -17,6 +17,7 @@ const en = {
 	noOsSendAtt: 'Cannot send attachments: object storage not configured',
 	disabledSend: 'Email sending feature is disabled',
 	oauthDisabled: 'This OAuth login is not enabled',
+	oauthBindExpired: 'OAuth authorization expired, please sign in again',
 	daySendLimit: 'Daily send limit reached',
 	totalSendLimit: 'Total send limit reached',
 	daySendLack: 'Not enough remaining sends today',
