@@ -110,7 +110,7 @@ export async function email(message, env, ctx) {
 		}
 
 		const toName = email.to.find(item => item.address === message.to)?.name || '';
-		const code = await aiService.extractCode({ env }, email, { aiCode, aiCodeFilter, aiBaseUrl, aiApiKey, aiModel });
+		const meta = await aiService.extractMeta({ env }, email, { aiCode, aiCodeFilter, aiBaseUrl, aiApiKey, aiModel });
 
 		const params = {
 			toEmail: message.to,
@@ -118,7 +118,9 @@ export async function email(message, env, ctx) {
 			sendEmail: email.from.address,
 			name: email.from.name || emailUtils.getName(email.from.address),
 			subject: email.subject,
-			code,
+			code: meta.code,
+			billAmount: meta.amount,
+			billPeriod: meta.period,
 			content: email.html,
 			text: email.text,
 			cc: email.cc ? JSON.stringify(email.cc) : '[]',

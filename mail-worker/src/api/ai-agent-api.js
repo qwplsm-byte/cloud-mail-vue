@@ -3,6 +3,7 @@ import result from '../model/result';
 import userContext from '../security/user-context';
 import aiAgentService from '../service/ai-agent-service';
 import aiMemoryService from '../service/ai-memory-service';
+import aiBriefingService from '../service/ai-briefing-service';
 import aiChatService from '../service/ai-chat-service';
 
 app.post('/ai/assistant', async (c) => {
@@ -29,6 +30,12 @@ app.post('/ai/chat/save', async (c) => {
 app.post('/ai/chat/clear', async (c) => {
 	await aiChatService.clear(c, userContext.getUserId(c));
 	return c.json(result.ok());
+});
+
+//每日要务晨报: 汇总过去 24 小时邮件为"必办/账单/其余已归档", 按用户+日期缓存
+app.get('/ai/briefing', async (c) => {
+	const data = await aiBriefingService.daily(c, userContext.getUserId(c));
+	return c.json(result.ok(data));
 });
 
 //AI 记忆与用户画像: 供前端记忆面板查看与管理

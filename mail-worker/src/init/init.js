@@ -42,8 +42,26 @@ const dbInit = {
 		await this.v4_1DB(c);
 		await this.v4_2DB(c);
 		await this.v4_3DB(c);
+		await this.v4_4DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v4_4DB(c) {
+
+		//账单识别: 邮件列表行内直接展示"金额/扣费周期"并一键复制, 逐列执行避免已有列导致整批回滚
+		const columns = [
+			`ALTER TABLE email ADD COLUMN bill_amount TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE email ADD COLUMN bill_period TEXT NOT NULL DEFAULT ''`
+		];
+
+		for (const sql of columns) {
+			try {
+				await c.env.db.prepare(sql + ';').run();
+			} catch (e) {
+				console.warn(`跳过字段：${e.message}`);
+			}
+		}
 	},
 
 	async v4_3DB(c) {

@@ -8,6 +8,8 @@ export const email = sqliteTable('email', {
 	userId: integer('user_id').notNull(),
 	subject: text('subject'),
 	code: text('code').default('').notNull(),
+	billAmount: text('bill_amount').default('').notNull(),
+	billPeriod: text('bill_period').default('').notNull(),
 	category: integer('category').default(0).notNull(),
 	text: text('text'),
 	content: text('content'),

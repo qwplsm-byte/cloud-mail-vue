@@ -87,7 +87,8 @@
                   <div class="email-text">
                     <span class="email-subject" :style="(item.unread === EmailUnreadEnum.UNREAD && showUnread)  ? 'font-weight: bold' : ''">
                       <div class="unread" v-if="!isMobile && (item.unread === EmailUnreadEnum.UNREAD && showUnread) "/>
-                      <span v-if="item.code" class="code-tag" @click.stop="copyCode(item.code)">[{{ t('codeLabel') }}{{ item.code }}]</span>
+                      <span v-if="item.code" class="code-tag" @click.stop="copyCode(item.code)">{{ t('codeLabel') }}{{ item.code }}</span>
+                      <span v-if="item.billAmount" class="bill-tag" @click.stop="copyCode(item.billAmount)">{{ item.billAmount }}<template v-if="item.billPeriod"> · {{ item.billPeriod }}</template></span>
                       <span class="subject-text">
                         <slot name="subject" :email="item" >
                           {{ item.subject || '\u200B' }}
@@ -1193,8 +1194,27 @@ function loadData() {
         max-width: 170px;
         height: 20px;
         line-height: 20px;
-        font-size: 14px;
-        color: var(--el-text-color-primary);
+        font-size: 13px;
+        padding: 0 8px;
+        border-radius: 10px;
+        color: var(--el-color-primary);
+        background: var(--el-color-primary-light-9);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        cursor: pointer;
+      }
+
+      .bill-tag {
+        flex: 0 0 auto;
+        max-width: 200px;
+        height: 20px;
+        line-height: 20px;
+        font-size: 13px;
+        padding: 0 8px;
+        border-radius: 10px;
+        color: var(--el-color-warning);
+        background: var(--el-color-warning-light-9);
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;

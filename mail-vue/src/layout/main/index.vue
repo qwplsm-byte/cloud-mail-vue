@@ -10,15 +10,18 @@
         <component :is="Component" :key="route.name"/>
       </keep-alive>
     </router-view>
+    <dailyBriefing />
   </div>
 </template>
 <script setup>
 import account from '@/layout/account/index.vue'
+import dailyBriefing from '@/components/daily-briefing/index.vue'
 import {useUiStore} from "@/store/ui.js";
 import {useSettingStore} from "@/store/setting.js";
 import {computed, onBeforeUnmount, onMounted, watch} from "vue";
 import { useRoute } from 'vue-router'
 import { hasPerm } from "@/perm/perm.js"
+import {requestNotifyPermission} from "@/utils/notify.js";
 
 const settingStore = useSettingStore()
 const uiStore = useUiStore();
@@ -92,13 +95,21 @@ function showNotice(data) {
   })
 }
 
+//桌面通知需用户手势才能授权, 首次点击时静默申请一次
+const requestNotifyOnce = () => {
+  requestNotifyPermission()
+  document.removeEventListener('click', requestNotifyOnce)
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  document.addEventListener('click', requestNotifyOnce)
   handleResize()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  document.removeEventListener('click', requestNotifyOnce)
 })
 
 const handleResize = () => {

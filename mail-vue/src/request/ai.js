@@ -36,6 +36,11 @@ export function aiChatClear() {
     return http.post('/ai/chat/clear', {noMsg: true})
 }
 
+//每日要务晨报: 后端汇总过去24小时邮件, 按用户+日期缓存
+export function aiBriefing() {
+    return http.get('/ai/briefing', {noMsg: true})
+}
+
 //AI 记忆与用户画像: 记忆面板读取列表与画像
 export function aiMemoryDetail() {
     return http.get('/ai/memory', {noMsg: true})

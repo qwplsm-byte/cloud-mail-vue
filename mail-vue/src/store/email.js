@@ -17,6 +17,8 @@ export const useEmailStore = defineStore('email', {
         },
         sendScroll: null,
         detailMap: {},
+        //待打开的邮件id: 由晨报卡片/桌面通知等外部入口设置, 收件箱列表就绪后据此跳转
+        pendingOpenEmailId: 0,
     }),
     persist: {
         pick: ['contentData'],

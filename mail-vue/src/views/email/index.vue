@@ -74,11 +74,14 @@ import {useSettingStore} from "@/store/setting.js";
 import emailScroll from "@/components/email-scroll/index.vue"
 import {emailList, emailDelete, emailLatest, emailRead} from "@/request/email.js";
 import {starAdd, starCancel} from "@/request/star.js";
-import {computed, defineOptions, h, onMounted, onUnmounted, reactive, ref, watch} from "vue";
+import {computed, defineOptions, h, nextTick, onActivated, onMounted, onUnmounted, reactive, ref, watch} from "vue";
 import {sleep} from "@/utils/time-utils.js";
 import router from "@/router/index.js";
 import {Icon} from "@iconify/vue";
 import { useRoute } from 'vue-router'
+import {useI18n} from "vue-i18n";
+import {EmailUnreadEnum} from "@/enums/email-enum.js";
+import {showNotification} from "@/utils/notify.js";
 
 defineOptions({
   name: 'email'
@@ -88,6 +91,7 @@ const route = useRoute();
 const emailStore = useEmailStore();
 const accountStore = useAccountStore();
 const settingStore = useSettingStore();
+const { t } = useI18n();
 const scroll = ref({})
 
 // category: -1 表示全部，0 为未分类（由 AI 分类失败时产生），1-5 对应 账号/通知/账单/推广/其他
@@ -124,7 +128,15 @@ const filterActive = computed(() => !!(params.subject || params.content || param
 onMounted(() => {
   emailStore.emailScroll = scroll;
   latest()
+  nextTick(openPending)
 })
+
+onActivated(() => {
+  openPending()
+})
+
+watch(() => scroll.value?.emailList?.length, () => openPending())
+watch(() => emailStore.pendingOpenEmailId, () => openPending())
 
 onUnmounted(() => {
   //被 keep-alive 淘汰而销毁时, 解除 Store 对组件/DOM 的强引用, 避免其无法回收
@@ -179,6 +191,36 @@ function jumpContent(email) {
   router.push('/mail')
 }
 
+//收到带验证码的新邮件时弹系统桌面通知, 点击通知自动复制验证码并打开该邮件
+function notifyCode(email) {
+  if (!email?.code || email.unread !== EmailUnreadEnum.UNREAD) return
+  const n = showNotification(
+    t('notifyCodeTitle'),
+    t('notifyCodeBody', {code: email.code, name: email.name || email.sendEmail || ''})
+  )
+  if (!n) return
+  n.onclick = () => {
+    window.focus()
+    try {
+      navigator.clipboard.writeText(email.code)
+    } catch (e) {
+      //忽略: 剪贴板不可用不影响跳转
+    }
+    jumpContent(email)
+    n.close()
+  }
+}
+
+//晨报卡片等外部入口设置 pendingOpenEmailId 后, 列表就绪即跳转到该邮件
+function openPending() {
+  const id = emailStore.pendingOpenEmailId
+  if (!id) return
+  const item = scroll.value?.emailList?.find?.(e => e.emailId === id)
+  if (!item) return
+  emailStore.pendingOpenEmailId = 0
+  jumpContent(item)
+}
+
 const existIds = new Set();
 
 async function latest() {
@@ -230,6 +272,7 @@ async function latest() {
 
                 existIds.add(email.emailId)
                 scroll.value.addItem(email)
+                notifyCode(email)
 
                 await sleep(50)
               }
