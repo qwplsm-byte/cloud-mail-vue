@@ -49,6 +49,12 @@
           <div class="att-add" @click="chooseFile">
             <Icon icon="iconamoon:attachment-fill" width="24" height="24"/>
           </div>
+          <el-tooltip v-if="showAiDraft" :content="t('aiDraftTip')" placement="top">
+            <el-button class="ai-draft-btn" size="small" :loading="aiLoading" @click="generateDraft">
+              <Icon v-if="!aiLoading" icon="solar:magic-stick-3-bold-duotone" width="16" height="16"/>
+              <span class="ai-draft-text">{{ $t('aiDraft') }}</span>
+            </el-button>
+          </el-tooltip>
           <div class="att-clear" @click="clearContent">
             <Icon icon="icon-park-outline:clear-format" width="24" height="24 "/>
           </div>
@@ -60,6 +66,16 @@
               <Icon style="cursor: pointer;" icon="material-symbols-light:close-rounded" @click="delAtt(index)"
                     width="22" height="22"/>
             </div>
+            <div class="att-item ai-suggest" v-for="item in aiSuggest" :key="'ai-' + item.id"
+                 :title="item.why" @click="attachFromDrive(item)">
+              <Icon v-bind="getIconByName(item.name)"/>
+              <span class="att-filename">{{ item.name }}</span>
+              <span class="att-size">{{ formatBytes(item.size) }}</span>
+              <Icon v-if="item.added" icon="material-symbols-light:check-circle-rounded" width="20" height="20"/>
+              <Icon v-else :class="item.loading ? 'ai-spin' : ''" icon="material-symbols-light:add-circle-rounded"
+                    width="20" height="20"/>
+            </div>
+            <div class="ai-note" v-if="aiNote">{{ aiNote }}</div>
           </div>
           <div>
             <el-button type="primary" @click="sendEmail" v-if="form.sendType === 'reply'">{{ $t('reply') }}</el-button>
@@ -98,6 +114,7 @@ import {h, nextTick, onMounted, onUnmounted, reactive, ref, toRaw, computed} fro
 import {Icon} from "@iconify/vue";
 import {useUserStore} from "@/store/user.js";
 import {emailSend} from "@/request/email.js";
+import {aiDraft} from "@/request/ai.js";
 import {isEmail} from "@/utils/verify-utils.js";
 import {useAccountStore} from "@/store/account.js";
 import {useEmailStore} from "@/store/email.js";
@@ -113,7 +130,7 @@ import db from "@/db/db.js";
 import dayjs from "dayjs";
 import {useI18n} from "vue-i18n";
 import router from "@/router/index.js";
-import {ElMessageBox} from "element-plus";
+import {ElMessageBox, ElMessage} from "element-plus";
 
 defineExpose({
   open,
@@ -161,7 +178,113 @@ const form = reactive({
 
 const selectRecipientList = ref([])
 
+//AI 推荐附件可直接附带的体积上限, 过大时提示改用附件按钮手动选择
+const AI_ATTACH_MAX_SIZE = 10 * 1024 * 1024
+
 const contacts = computed(() => writerStore.sendRecipientRecord.map(item => ({email: item})))
+
+//拟真一键草稿: 仅回复场景可用; aiSuggest 是 AI 推荐的网盘附件, 点击即附带
+const aiLoading = ref(false)
+const aiNote = ref('')
+const aiSuggest = reactive([])
+const showAiDraft = computed(() => form.sendType === 'reply' && form.emailId > 0)
+//引用原文的 HTML, 生成草稿时把草稿插到它上面
+let replyQuoteHtml = ''
+
+function clearAiDraft() {
+  aiLoading.value = false
+  aiNote.value = ''
+  aiSuggest.length = 0
+}
+
+async function generateDraft() {
+  if (aiLoading.value || !form.emailId) {
+    return
+  }
+
+  aiLoading.value = true
+
+  try {
+    const data = await aiDraft(form.emailId)
+    const draft = String(data?.draft || '').trim()
+
+    if (!draft) {
+      ElMessage({message: t('aiDraftEmpty'), type: 'warning', plain: true})
+      return
+    }
+
+    //草稿放在引用原文之上, 与常规回复的版式一致
+    defValue.value = `${draftToHtml(draft)}<div></div>${replyQuoteHtml}`
+    aiNote.value = String(data?.note || '')
+    aiSuggest.length = 0
+
+    for (const item of (data?.attachments || [])) {
+      aiSuggest.push({...item, loading: false, added: false})
+    }
+
+    nextTick(() => {
+      form.content = editor.value.getContent()
+      form.text = editor.value.getContent({format: 'text'})
+    })
+  } catch (e) {
+    ElMessage({message: t('aiDraftFail'), type: 'error', plain: true})
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+//把模型给的纯文本草稿转成可放进编辑器的 HTML, 转义后再按段落包裹
+function draftToHtml(text) {
+  const safe = String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+
+  return safe
+      .split(/\n{2,}/)
+      .map(block => `<div style="margin:0 0 12px;line-height:1.7;white-space:pre-wrap">${block.replace(/\n/g, '<br/>')}</div>`)
+      .join('')
+}
+
+//把 AI 推荐的网盘文件取回并附带: 该接口返回二进制流, 不能用 axios 实例, 手动带 token 走 fetch
+async function attachFromDrive(item) {
+  if (item.added || item.loading) {
+    return
+  }
+
+  item.loading = true
+
+  try {
+    const res = await fetch(`${import.meta.env.VITE_BASE_URL}/drive/file/${item.id}?download=1`, {
+      headers: {Authorization: localStorage.getItem('token') || ''}
+    })
+
+    if (!res.ok) {
+      ElMessage({message: t('driveDownloadFail'), type: 'error', plain: true, grouping: true})
+      return
+    }
+
+    const blob = await res.blob()
+
+    if (blob.size > AI_ATTACH_MAX_SIZE) {
+      ElMessage({message: t('aiAttachTooLarge'), type: 'warning', plain: true})
+      return
+    }
+
+    const content = await fileToBase64(blob)
+    form.attachments.push({
+      content,
+      filename: item.name,
+      size: blob.size || item.size,
+      contentType: item.mimeType || blob.type || ''
+    })
+    item.added = true
+  } catch (e) {
+    ElMessage({message: t('driveDownloadFail'), type: 'error', plain: true, grouping: true})
+  } finally {
+    item.loading = false
+  }
+}
 
 function openContacts() {
   showContacts.value = true
@@ -421,6 +544,8 @@ function resetForm() {
   backReply.subject = ''
   backReply.receiveEmail = []
   backReply.sendType = ''
+  replyQuoteHtml = ''
+  clearAiDraft()
   editor.value.clearEditor()
 }
 
@@ -477,8 +602,7 @@ function openReply(email) {
   defValue.value = ''
 
   setTimeout(() => {
-    defValue.value = `
-    <div></div>
+    replyQuoteHtml = `
     <div>
     <br>
         ${formatDetailDate(email.createTime)} ${email.name} &lt${email.sendEmail}&gt ${t('wrote')}:
@@ -488,6 +612,9 @@ function openReply(email) {
           ${formatImage(email.content) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
       </article>
     </blockquote>`
+    defValue.value = `
+    <div></div>
+    ${replyQuoteHtml}`
     open()
 
     nextTick(() => {
@@ -700,7 +827,7 @@ function close() {
 
       .button-item {
         display: grid;
-        grid-template-columns: auto auto 1fr auto;
+        grid-template-columns: auto auto auto 1fr auto;
 
         .att-add {
           cursor: pointer;
@@ -709,6 +836,14 @@ function close() {
         .att-clear {
           cursor: pointer;
           margin-left: 10px;
+        }
+
+        .ai-draft-btn {
+          margin-left: 10px;
+        }
+
+        .ai-draft-text {
+          margin-left: 4px;
         }
 
         .att-list {
@@ -738,11 +873,35 @@ function close() {
               overflow: hidden;
             }
           }
+
+          //AI 推荐的网盘附件: 用虚线框区分于已添加的附件, 点击即附带
+          .ai-suggest {
+            cursor: pointer;
+            border: 1px dashed var(--el-color-primary);
+            color: var(--el-color-primary);
+            background: transparent;
+          }
+
+          .ai-note {
+            grid-column: 1 / -1;
+            font-size: 12px;
+            color: var(--secondary-text-color);
+          }
         }
       }
     }
   }
 
+}
+
+.ai-spin {
+  animation: ai-spin 1s linear infinite;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .email-row {

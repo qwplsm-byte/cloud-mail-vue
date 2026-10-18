@@ -5,6 +5,7 @@ import aiAgentService from '../service/ai-agent-service';
 import aiMemoryService from '../service/ai-memory-service';
 import aiBriefingService from '../service/ai-briefing-service';
 import aiChatService from '../service/ai-chat-service';
+import aiDraftService from '../service/ai-draft-service';
 
 app.post('/ai/assistant', async (c) => {
 	const data = await aiAgentService.plan(c, await c.req.json(), userContext.getUserId(c));
@@ -35,6 +36,12 @@ app.post('/ai/chat/clear', async (c) => {
 //每日要务晨报: 汇总过去 24 小时邮件为"必办/账单/其余已归档", 按用户+日期缓存
 app.get('/ai/briefing', async (c) => {
 	const data = await aiBriefingService.daily(c, userContext.getUserId(c));
+	return c.json(result.ok(data));
+});
+
+//拟真一键草稿: 结合往来邮件、长期记忆与网盘文件, 生成模仿主人语气的回复草稿并推荐附件
+app.post('/ai/draft', async (c) => {
+	const data = await aiDraftService.generate(c, await c.req.json(), userContext.getUserId(c));
 	return c.json(result.ok(data));
 });
 

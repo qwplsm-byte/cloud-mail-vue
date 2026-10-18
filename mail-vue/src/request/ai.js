@@ -41,6 +41,11 @@ export function aiBriefing() {
     return http.get('/ai/briefing', {noMsg: true})
 }
 
+//拟真一键草稿: 后端结合往来邮件、长期记忆与网盘文件生成回复草稿并推荐附件; 生成较慢, 给足超时
+export function aiDraft(emailId) {
+    return http.post('/ai/draft', {emailId}, {timeout: 60 * 1000, noMsg: true})
+}
+
 //AI 记忆与用户画像: 记忆面板读取列表与画像
 export function aiMemoryDetail() {
     return http.get('/ai/memory', {noMsg: true})
