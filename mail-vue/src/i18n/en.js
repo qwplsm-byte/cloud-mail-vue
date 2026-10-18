@@ -601,6 +601,7 @@ const en = {
     driveTagRunning: 'AI is tagging your files…',
     driveTagDone: 'AI tagged {count} file(s)',
     driveAiFail: 'AI failed, please try again later',
+    driveProcessRemaining: 'Processed {count} this time, {remaining} left — click again to continue',
     driveMoveDone: 'Moved {count} item(s)',
     driveCopyDone: 'Copied {count} item(s)',
     driveDeleteDone: 'Deleted {count} item(s)',

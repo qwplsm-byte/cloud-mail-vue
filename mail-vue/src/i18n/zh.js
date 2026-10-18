@@ -602,6 +602,7 @@ const zh = {
     driveTagRunning: 'AI 正在为文件打标签…',
     driveTagDone: 'AI 已为 {count} 个文件打上标签',
     driveAiFail: 'AI 处理失败，请稍后再试',
+    driveProcessRemaining: '本次已处理 {count} 个，剩余 {remaining} 个，可再次点击继续',
     driveMoveDone: '已移动 {count} 项',
     driveCopyDone: '已复制 {count} 项',
     driveDeleteDone: '已删除 {count} 项',

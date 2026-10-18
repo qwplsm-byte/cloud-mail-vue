@@ -29,8 +29,8 @@ const SAMPLE_SIZE = 5;
 //自动归类单次处理的邮件数量与并发度(每封都要调一次模型)
 const AUTO_CATEGORIZE_LIMIT = 15;
 const AUTO_CATEGORIZE_CONCURRENCY = 5;
-//AI 接口最长等待时间, 推理型模型出结果可能要一分钟以上
-const AI_TIMEOUT_MS = 120 * 1000;
+//AI 接口最长等待时间: 必须留在网关(Cloudflare)约 100s 响应上限之内, 否则慢模型会直接触发 524, 前端也拿不到友好提示
+const AI_TIMEOUT_MS = 80 * 1000;
 //规划阶段要输出 JSON, 给推理模型留足 token 余量, 否则推理占满后 content 为空
 const AI_MAX_TOKENS = 4096;
 //Workers AI 内置小模型的输出上限较低, 给太多会直接报错, 这里做个封顶

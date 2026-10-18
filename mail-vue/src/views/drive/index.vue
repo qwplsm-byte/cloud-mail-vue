@@ -742,7 +742,11 @@ async function runTidy() {
   const hint = ElMessage({message: t('driveTidyRunning'), type: 'info', plain: true, grouping: true, duration: 0})
   try {
     const data = await driveTidy(ids)
-    ElMessage({message: t('driveTidyDone', {count: data?.count ?? ids.length}), type: 'success', plain: true, grouping: true})
+    if (data?.remaining > 0) {
+      ElMessage({message: t('driveProcessRemaining', {count: data.count ?? 0, remaining: data.remaining}), type: 'warning', plain: true, grouping: true})
+    } else {
+      ElMessage({message: t('driveTidyDone', {count: data?.count ?? ids.length}), type: 'success', plain: true, grouping: true})
+    }
     await afterChange()
   } catch (e) {
     ElMessage({message: t('driveAiFail'), type: 'error', plain: true, grouping: true})
@@ -763,7 +767,11 @@ async function runAutotag() {
   const hint = ElMessage({message: t('driveTagRunning'), type: 'info', plain: true, grouping: true, duration: 0})
   try {
     const data = await driveAutotag(ids)
-    ElMessage({message: t('driveTagDone', {count: data?.count ?? ids.length}), type: 'success', plain: true, grouping: true})
+    if (data?.remaining > 0) {
+      ElMessage({message: t('driveProcessRemaining', {count: data.count ?? 0, remaining: data.remaining}), type: 'warning', plain: true, grouping: true})
+    } else {
+      ElMessage({message: t('driveTagDone', {count: data?.count ?? ids.length}), type: 'success', plain: true, grouping: true})
+    }
     await load()
   } catch (e) {
     ElMessage({message: t('driveAiFail'), type: 'error', plain: true, grouping: true})

@@ -45,14 +45,14 @@ export function driveUpload(file, parentId, onUploadProgress) {
     })
 }
 
-//AI 为选中文件生成标签, 逐文件调用模型, 需要更长时间
+//AI 为选中文件生成标签, 逐文件调用模型; 后端用时间预算兜底, 请求在网关 100s 内返回, 返回体带 remaining
 export function driveAutotag(ids) {
-    return http.post('/drive/autotag', {ids}, {timeout: 300 * 1000, noMsg: true})
+    return http.post('/drive/autotag', {ids}, {timeout: 100 * 1000, noMsg: true})
 }
 
-//AI 智能归类: 自动打标签并移动到 AI 新建的文件夹, 需要更长时间
+//AI 智能归类: 自动打标签并移动到 AI 新建的文件夹; 同上, 超量部分会回报 remaining
 export function driveTidy(ids) {
-    return http.post('/drive/tidy', {ids}, {timeout: 300 * 1000, noMsg: true})
+    return http.post('/drive/tidy', {ids}, {timeout: 100 * 1000, noMsg: true})
 }
 
 //网盘用量统计: 文件数/文件夹数/占用字节
