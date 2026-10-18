@@ -74,7 +74,7 @@ import {useSettingStore} from "@/store/setting.js";
 import emailScroll from "@/components/email-scroll/index.vue"
 import {emailList, emailDelete, emailLatest, emailRead} from "@/request/email.js";
 import {starAdd, starCancel} from "@/request/star.js";
-import {computed, defineOptions, h, onMounted, reactive, ref, watch} from "vue";
+import {computed, defineOptions, h, onMounted, onUnmounted, reactive, ref, watch} from "vue";
 import {sleep} from "@/utils/time-utils.js";
 import router from "@/router/index.js";
 import {Icon} from "@iconify/vue";
@@ -124,6 +124,11 @@ const filterActive = computed(() => !!(params.subject || params.content || param
 onMounted(() => {
   emailStore.emailScroll = scroll;
   latest()
+})
+
+onUnmounted(() => {
+  //被 keep-alive 淘汰而销毁时, 解除 Store 对组件/DOM 的强引用, 避免其无法回收
+  emailStore.emailScroll = null;
 })
 
 

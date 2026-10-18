@@ -27,7 +27,7 @@ import {useEmailStore} from "@/store/email.js";
 import emailScroll from "@/components/email-scroll/index.vue"
 import {emailList, emailDelete} from "@/request/email.js";
 import {starAdd, starCancel} from "@/request/star.js";
-import {defineOptions, onMounted, reactive, ref, watch} from "vue";
+import {defineOptions, onMounted, onUnmounted, reactive, ref, watch} from "vue";
 import router from "@/router/index.js";
 import {Icon} from "@iconify/vue";
 
@@ -44,6 +44,11 @@ const params = reactive({
 
 onMounted(() => {
   emailStore.sendScroll = sendScroll;
+})
+
+onUnmounted(() => {
+  //被 keep-alive 淘汰而销毁时, 解除 Store 对组件/DOM 的强引用, 避免其无法回收
+  emailStore.sendScroll = null;
 })
 
 watch(() => accountStore.currentAccountId, () => {

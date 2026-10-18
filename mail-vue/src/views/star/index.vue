@@ -17,7 +17,7 @@ import emailScroll from "@/components/email-scroll/index.vue"
 import {emailDelete} from "@/request/email.js";
 import {starAdd, starCancel, starList} from "@/request/star.js";
 import {useEmailStore} from "@/store/email.js";
-import {defineOptions, onMounted, ref} from "vue";
+import {defineOptions, onMounted, onUnmounted, ref} from "vue";
 import router from "@/router/index.js";
 
 defineOptions({
@@ -46,6 +46,11 @@ function cancelStar(email) {
 
 onMounted(() => {
   emailStore.starScroll = scroll
+})
+
+onUnmounted(() => {
+  //被 keep-alive 淘汰而销毁时, 解除 Store 对组件/DOM 的强引用, 避免其无法回收
+  emailStore.starScroll = null
 })
 
 </script>

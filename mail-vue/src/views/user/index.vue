@@ -377,7 +377,7 @@
 </template>
 
 <script setup>
-import {defineOptions, h, reactive, ref, watch} from 'vue'
+import {defineOptions, h, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
 import {
   userList,
   userDelete,
@@ -539,10 +539,19 @@ const filterItem = reactive({
   receive: ['normal', 'del']
 })
 
-window.addEventListener('wheel', (event) => {
+//滚动时收起右键菜单; 用成对的挂载/卸载管理监听, 避免组件反复挂载后监听器不断堆积
+function onWheelCloseDropdown() {
   if (dropdownShow.value) {
     dropdownRef.value.handleClose();
   }
+}
+
+onMounted(() => {
+  window.addEventListener('wheel', onWheelCloseDropdown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('wheel', onWheelCloseDropdown)
 })
 
 function visibleChange(e) {

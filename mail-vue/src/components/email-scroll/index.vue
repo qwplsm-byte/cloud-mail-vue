@@ -321,6 +321,8 @@ let scrollTop = 0
 const latestEmail = ref(null)
 const scrollbarRef = ref(null)
 let reqLock = false
+//请求序号: 用于丢弃过期响应, 避免切分类/切账号时旧请求的数据盖到新列表上
+let reqSeq = 0
 let isMobile = ref(innerWidth < 1367)
 let skeletonRows = 0
 const timePaddingRight = ref('');
@@ -801,10 +803,12 @@ function jumpDetails(email) {
 
 function getEmailList(refresh = false) {
 
-  if (reqLock) return;
+  //分页加载遇到在途请求直接跳过(去重); 但刷新(切账号/切分类/手动刷新)不能被吞掉, 否则会一直停在旧数据上
+  if (!refresh && reqLock) return;
 
   let emailId = emailList.length > 0 ? emailList.at(-1).emailId : 0;
 
+  const seq = ++reqSeq
   reqLock = true
 
   if (!refresh) {
@@ -829,11 +833,15 @@ function getEmailList(refresh = false) {
   let start = Date.now();
 
   props.getEmailList(emailId, queryParam.size).then(async data => {
+    //已有更新的请求发出, 丢弃这次过期结果, 防止旧数据盖到新列表
+    if (seq !== reqSeq) return
     let end = Date.now();
     let duration = end - start;
     if (duration < 300 && !emailId) {
         await sleep(300 - duration)
     }
+    //sleep 期间可能又发了新请求, 再确认一次
+    if (seq !== reqSeq) return
     firstLoad.value = false
 
     let list = data.list.map(item => ({
@@ -857,6 +865,8 @@ function getEmailList(refresh = false) {
 
     total.value = data.total;
   }).finally(() => {
+    //只有最新一次请求才负责复位状态, 过期请求不要动 loading 与锁
+    if (seq !== reqSeq) return
     loading.value = false
     reqLock = false
   })
