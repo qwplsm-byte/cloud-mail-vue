@@ -77,7 +77,9 @@ function updateContent() {
       }
 
       .shadow-content {
-        background: #FFFFFF;
+        /* 默认底色改成透明, 让正文区域透出与外层一致的玻璃/壁纸, 不再压一块突兀的白底;
+           邮件自带 body 背景样式仍会注入并覆盖此处(尊重邮件原样)。 */
+        background: transparent;
         width: fit-content;
         height: fit-content;
         min-width: 100%;
