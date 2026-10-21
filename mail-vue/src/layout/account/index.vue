@@ -89,12 +89,12 @@
                 <el-option
                     v-for="item in domainList"
                     :key="item"
-                    :label="item"
+                    :label="domainToUnicode(item)"
                     :value="item"
                 />
               </el-select>
               <div>
-                <span>{{ addForm.suffix }}</span>
+                <span>{{ domainToUnicode(addForm.suffix) }}</span>
                 <Icon class="setting-icon" icon="mingcute:down-small-fill" width="20" height="20"/>
               </div>
             </div>
@@ -144,6 +144,7 @@ import {useEmailStore} from "@/store/email.js";
 import {useUserStore} from "@/store/user.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
+import {domainToUnicode} from "@/utils/convert.js";
 import {AccountAllReceiveEnum} from "@/enums/account-enum.js";
 
 const {t} = useI18n();

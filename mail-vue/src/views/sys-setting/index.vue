@@ -596,7 +596,7 @@
             <el-option
                 v-for="item in settingStore.domainList"
                 :key="item"
-                :label="item"
+                :label="domainToUnicode(item)"
                 :value="item"
             />
           </el-select>
@@ -1139,7 +1139,7 @@ import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
 import {useAccountStore} from "@/store/account.js";
 import {Icon} from "@iconify/vue";
-import {cvtR2Url, toOssDomain} from "@/utils/convert.js";
+import {cvtR2Url, domainToUnicode, toOssDomain} from "@/utils/convert.js";
 import {storeToRefs} from "pinia";
 import {debounce} from 'lodash-es'
 import {isDomain, isEmail, isIpUrl} from "@/utils/verify-utils.js";

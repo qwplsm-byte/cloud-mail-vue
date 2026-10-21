@@ -28,12 +28,12 @@
                   <el-option
                       v-for="item in domainList"
                       :key="item"
-                      :label="item"
+                      :label="domainToUnicode(item)"
                       :value="item"
                   />
                 </el-select>
                 <div style="color: var(--el-text-color-primary)">
-                  <span>{{ suffix }}</span>
+                  <span>{{ domainToUnicode(suffix) }}</span>
                   <Icon class="setting-icon" icon="mingcute:down-small-fill" width="20" height="20"/>
                 </div>
               </div>
@@ -70,12 +70,12 @@
                   <el-option
                       v-for="item in domainList"
                       :key="item"
-                      :label="item"
+                      :label="domainToUnicode(item)"
                       :value="item"
                   />
                 </el-select>
                 <div>
-                  <span>{{ suffix }}</span>
+                  <span>{{ domainToUnicode(suffix) }}</span>
                   <Icon class="setting-icon" icon="mingcute:down-small-fill" width="20" height="20"/>
                 </div>
               </div>
@@ -129,12 +129,12 @@
                 <el-option
                     v-for="item in domainList"
                     :key="item"
-                    :label="item"
+                    :label="domainToUnicode(item)"
                     :value="item"
                 />
               </el-select>
               <div>
-                <span>{{ suffix }}</span>
+                <span>{{ domainToUnicode(suffix) }}</span>
                 <Icon class="setting-icon" icon="mingcute:down-small-fill" width="20" height="20"/>
               </div>
             </div>
@@ -168,7 +168,7 @@ import {useAccountStore} from "@/store/account.js";
 import {useUserStore} from "@/store/user.js";
 import {useUiStore} from "@/store/ui.js";
 import {Icon} from "@iconify/vue";
-import {cvtR2Url} from "@/utils/convert.js";
+import {cvtR2Url, domainToUnicode} from "@/utils/convert.js";
 import {loginUserInfo} from "@/request/my.js";
 import {permsToRouter} from "@/perm/perm.js";
 import {useI18n} from "vue-i18n";
