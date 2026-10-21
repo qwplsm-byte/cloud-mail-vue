@@ -9,7 +9,7 @@
         <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, index) in accounts" :key="item.accountId"
                  @click="changeAccount(item)">
           <div class="account">
-            {{ item.email }}
+            {{ domainToUnicode(item.email) }}
           </div>
           <div class="opt">
             <div class="send-email" @click.stop>
