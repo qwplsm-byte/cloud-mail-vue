@@ -521,6 +521,19 @@
                   </el-button>
                 </div>
               </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('aiKnowledge') }}</span>
+                  <el-tooltip effect="dark" :content="$t('aiKnowledgeDesc')">
+                    <Icon class="warning" icon="fe:warning" width="16" height="16"/>
+                  </el-tooltip>
+                </div>
+                <div class="forward">
+                  <el-button class="opt-button" size="small" type="primary" @click="openKnowledge">
+                    <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
+                  </el-button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1127,6 +1140,63 @@ Authorization: &lt;secret&gt;</pre>
           </el-button>
         </div>
       </el-dialog>
+
+      <el-dialog v-model="knowledgeShow" class="forward-dialog" width="720px" @closed="resetKnowledge">
+        <template #header>
+          <div class="forward-head">
+            <span class="forward-set-title">{{ $t('aiKnowledge') }}</span>
+            <el-tooltip effect="dark" :content="$t('aiKnowledgeDesc')">
+              <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+            </el-tooltip>
+          </div>
+        </template>
+
+        <!-- 向量索引缺失时自动走关键词兜底, 这里提示管理员去建索引 -->
+        <el-alert v-if="!knowledgeVectorReady" :title="$t('aiKnowledgeVectorOff')" type="warning" :closable="false"
+                  show-icon style="margin-bottom: 12px;"/>
+
+        <div class="knowledge-toolbar" style="display: flex; gap: 8px; margin-bottom: 10px;">
+          <el-button size="small" type="primary" @click="resetKnowledgeForm">{{ $t('aiKnowledgeAdd') }}</el-button>
+          <el-button size="small" :loading="knowledgeSyncing" @click="syncCharacters">
+            {{ knowledgeSyncing ? $t('aiKnowledgeSyncing') : $t('aiKnowledgeSync') }}
+          </el-button>
+        </div>
+
+        <el-table :data="knowledgeList" size="small" max-height="240" style="width: 100%; margin-bottom: 12px;"
+                  v-loading="knowledgeLoading">
+          <el-table-column prop="title" :label="$t('aiKnowledgeTitle')" min-width="140" show-overflow-tooltip/>
+          <el-table-column prop="source" :label="$t('aiKnowledgeSource')" width="90"/>
+          <el-table-column prop="chunk_count" :label="$t('aiKnowledgeChunks')" width="70"/>
+          <el-table-column width="120" align="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="editKnowledge(row)">{{ $t('aiKnowledgeEdit') }}</el-button>
+              <el-button link type="danger" size="small" @click="removeKnowledge(row)">{{ $t('delete') }}</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-form label-position="top">
+          <el-form-item :label="$t('aiKnowledgeTitle')">
+            <el-input v-model="knowledgeForm.title" maxlength="100" clearable
+                      :placeholder="$t('aiKnowledgeTitleDesc')"/>
+          </el-form-item>
+          <el-form-item :label="$t('aiKnowledgeTags')">
+            <el-input v-model="knowledgeForm.tags" maxlength="200" clearable
+                      :placeholder="$t('aiKnowledgeTagsDesc')"/>
+          </el-form-item>
+          <el-form-item :label="$t('aiKnowledgeContent')">
+            <el-input v-model="knowledgeForm.content" type="textarea" :rows="8"
+                      :placeholder="$t('aiKnowledgeContentDesc')"/>
+          </el-form-item>
+        </el-form>
+
+        <div style="display: flex; gap: 10px;">
+          <el-button v-if="knowledgeForm.aiKnowledgeId" style="flex: 1; margin-left: 0;"
+                     @click="resetKnowledgeForm">{{ $t('cancel') }}</el-button>
+          <el-button type="primary" style="flex: 1; margin-left: 0;" :loading="knowledgeSaving"
+                     @click="saveKnowledge">{{ $t('save') }}</el-button>
+        </div>
+      </el-dialog>
     </el-scrollbar>
   </div>
 </template>
@@ -1134,6 +1204,13 @@ Authorization: &lt;secret&gt;</pre>
 <script setup>
 import {computed, defineOptions, nextTick, reactive, ref} from "vue";
 import {deleteBackground, deleteLayoutBackground, setBackground, setBlackList, setLayoutBackground, settingPresignUpload, settingQuery, settingSet, testAiConnection} from "@/request/setting.js";
+import {
+  aiKnowledgeDelete,
+  aiKnowledgeDetail,
+  aiKnowledgeList,
+  aiKnowledgeSave,
+  aiKnowledgeSyncCharacters
+} from "@/request/ai.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
@@ -2074,6 +2151,109 @@ function openAiCodeFilter() {
 function openAiSetting() {
   resetAiSetting()
   aiSettingShow.value = true
+}
+
+//知识库管理: 列表只读标题等信息, 编辑时再拉完整正文
+const knowledgeShow = ref(false)
+const knowledgeLoading = ref(false)
+const knowledgeSaving = ref(false)
+const knowledgeSyncing = ref(false)
+const knowledgeVectorReady = ref(true)
+const knowledgeList = ref([])
+const knowledgeForm = reactive({
+  aiKnowledgeId: 0,
+  title: '',
+  tags: '',
+  content: ''
+})
+
+function openKnowledge() {
+  resetKnowledgeForm()
+  knowledgeShow.value = true
+  loadKnowledge()
+}
+
+function loadKnowledge() {
+  knowledgeLoading.value = true
+  aiKnowledgeList().then(data => {
+    knowledgeVectorReady.value = !!data?.vectorReady
+    knowledgeList.value = data?.list || []
+  }).catch(() => {
+    knowledgeList.value = []
+  }).finally(() => {
+    knowledgeLoading.value = false
+  })
+}
+
+function resetKnowledgeForm() {
+  knowledgeForm.aiKnowledgeId = 0
+  knowledgeForm.title = ''
+  knowledgeForm.tags = ''
+  knowledgeForm.content = ''
+}
+
+function editKnowledge(row) {
+  aiKnowledgeDetail(row.ai_knowledge_id).then(data => {
+    if (!data) return
+    knowledgeForm.aiKnowledgeId = data.ai_knowledge_id
+    knowledgeForm.title = data.title || ''
+    knowledgeForm.tags = data.tags || ''
+    knowledgeForm.content = data.content || ''
+  })
+}
+
+function saveKnowledge() {
+  if (knowledgeSaving.value) return
+  if (!knowledgeForm.title.trim() || !knowledgeForm.content.trim()) {
+    ElMessage({message: t('aiKnowledgeEmpty'), type: 'warning', plain: true})
+    return
+  }
+  knowledgeSaving.value = true
+  aiKnowledgeSave({
+    aiKnowledgeId: knowledgeForm.aiKnowledgeId,
+    title: knowledgeForm.title.trim(),
+    tags: knowledgeForm.tags.trim(),
+    content: knowledgeForm.content,
+    enabled: 1
+  }).then(() => {
+    ElMessage({message: t('saveSuccessMsg'), type: 'success', plain: true})
+    resetKnowledgeForm()
+    loadKnowledge()
+  }).finally(() => {
+    knowledgeSaving.value = false
+  })
+}
+
+async function removeKnowledge(row) {
+  try {
+    await ElMessageBox.confirm(t('aiKnowledgeDeleteConfirm'), t('warning'), {type: 'warning'})
+  } catch (e) {
+    return
+  }
+  aiKnowledgeDelete(row.ai_knowledge_id).then(() => {
+    loadKnowledge()
+  })
+}
+
+function syncCharacters() {
+  if (knowledgeSyncing.value) return
+  knowledgeSyncing.value = true
+  aiKnowledgeSyncCharacters().then(data => {
+    const failed = data?.failed || []
+    ElMessage({
+      message: t('aiKnowledgeSyncDone', {imported: data?.imported || 0, skipped: data?.skipped || 0, failed: failed.length}),
+      type: failed.length ? 'warning' : 'success',
+      plain: true,
+      duration: 5000
+    })
+    loadKnowledge()
+  }).finally(() => {
+    knowledgeSyncing.value = false
+  })
+}
+
+function resetKnowledge() {
+  resetKnowledgeForm()
 }
 
 function testAi() {

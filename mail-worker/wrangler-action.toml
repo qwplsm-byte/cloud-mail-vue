@@ -25,6 +25,12 @@ bucket_name = "${R2_BUCKET_NAME}"
 [ai]
 binding = "ai"
 
+#可选: AI 知识库向量检索。创建索引: npx wrangler vectorize create cloud-mail-ai --dimensions=1024 --metric=cosine
+#不配置时知识库自动走关键词检索
+#[[vectorize]]
+#binding = "vectorize"
+#index_name = "cloud-mail-ai"
+
 [assets]
 binding = "assets"
 directory = "./dist"

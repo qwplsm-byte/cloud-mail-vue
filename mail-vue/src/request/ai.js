@@ -83,3 +83,25 @@ export function aiMemoryClear() {
 export function aiMemorySaveProfile(content) {
     return http.post('/ai/memory/profile', {content})
 }
+
+//AI 知识库(仅管理员): 文档入库时切块并写入向量索引, 对话时按需检索
+export function aiKnowledgeList() {
+    return http.get('/ai/knowledge/list', {noMsg: true})
+}
+
+export function aiKnowledgeDetail(aiKnowledgeId) {
+    return http.get('/ai/knowledge/detail', {params: {aiKnowledgeId}, noMsg: true})
+}
+
+export function aiKnowledgeSave(data) {
+    return http.post('/ai/knowledge/save', data)
+}
+
+export function aiKnowledgeDelete(aiKnowledgeId) {
+    return http.delete('/ai/knowledge/delete', {params: {aiKnowledgeId}})
+}
+
+//一键导入 Re:Zero 角色设定: 逐个抓取萌娘百科/Fandom, 较慢, 给足超时
+export function aiKnowledgeSyncCharacters() {
+    return http.post('/ai/knowledge/syncCharacters', {}, {timeout: 100 * 1000})
+}

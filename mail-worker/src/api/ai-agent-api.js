@@ -1,7 +1,10 @@
 import app from '../hono/hono';
 import result from '../model/result';
 import userContext from '../security/user-context';
+import BizError from '../error/biz-error';
+import { t } from '../i18n/i18n';
 import aiAgentService from '../service/ai-agent-service';
+import aiKnowledgeService from '../service/ai-knowledge-service';
 import aiMemoryService from '../service/ai-memory-service';
 import aiBriefingService from '../service/ai-briefing-service';
 import aiChatService from '../service/ai-chat-service';
@@ -21,6 +24,44 @@ app.post('/ai/assistant/execute', async (c) => {
 app.get('/ai/thinking', async (c) => {
 	const data = await aiAgentService.thinkingOptions(c);
 	return c.json(result.ok(data));
+});
+
+//知识库属于全局配置, 仅管理员可读写
+async function ensureKnowledgeAdmin(c) {
+	const userId = userContext.getUserId(c);
+
+	if (!(await aiAgentService.isAdmin(c, userId, 'user:add'))) {
+		throw new BizError(t('unauthorized'), 403);
+	}
+}
+
+app.get('/ai/knowledge/list', async (c) => {
+	await ensureKnowledgeAdmin(c);
+	return c.json(result.ok(await aiKnowledgeService.list(c)));
+});
+
+app.get('/ai/knowledge/detail', async (c) => {
+	await ensureKnowledgeAdmin(c);
+	const id = Number(c.req.query('aiKnowledgeId')) || 0;
+	return c.json(result.ok(await aiKnowledgeService.detail(c, id)));
+});
+
+app.post('/ai/knowledge/save', async (c) => {
+	await ensureKnowledgeAdmin(c);
+	return c.json(result.ok(await aiKnowledgeService.save(c, await c.req.json())));
+});
+
+app.delete('/ai/knowledge/delete', async (c) => {
+	await ensureKnowledgeAdmin(c);
+	const id = Number(c.req.query('aiKnowledgeId')) || 0;
+	await aiKnowledgeService.remove(c, id);
+	return c.json(result.ok());
+});
+
+//一键导入 Re:Zero 角色设定(萌娘百科/Fandom), 已存在的跳过
+app.post('/ai/knowledge/syncCharacters', async (c) => {
+	await ensureKnowledgeAdmin(c);
+	return c.json(result.ok(await aiKnowledgeService.syncCharacters(c)));
 });
 
 //AI 对话记录: 存服务端, 多设备登录同一账号时同步

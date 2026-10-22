@@ -226,6 +226,46 @@ jobs:
             echo "ℹ️ BREVO_API_KEY not set, skipping."
           fi
 
+      - name: 🧠 设置向量索引 / Set up Vectorize index
+        working-directory: ./mail-worker
+        run: |
+
+          CONFIG_FILE="wrangler-action.toml"
+          INDEX_NAME="${NAME}-ai"
+
+          #Token 没有 Vectorize 权限时不让整个部署失败, 知识库自动回落关键词检索
+          set +e
+            INDEX_LIST=$(pnpm wrangler vectorize list --json 2>&1)
+            STATUS=$?
+          set -e
+
+          if [ $STATUS -ne 0 ]; then
+            echo "::warning::无法读取 Vectorize 索引(API Token 可能没有 Vectorize 权限), 知识库将使用关键词检索。"
+            echo "$INDEX_LIST"
+            exit 0
+          fi
+
+          if echo "$INDEX_LIST" | jq -e ".[] | select(.name == \"$INDEX_NAME\")" >/dev/null 2>&1; then
+            echo "✅ Vectorize index $INDEX_NAME already exists."
+          else
+            echo "⚠️ Vectorize index $INDEX_NAME does not exist. Creating..."
+            pnpm wrangler vectorize create "$INDEX_NAME" --dimensions=1024 --metric=cosine || true
+          fi
+
+          INDEX_LIST=$(pnpm wrangler vectorize list --json 2>/dev/null || echo "[]")
+
+          if echo "$INDEX_LIST" | jq -e ".[] | select(.name == \"$INDEX_NAME\")" >/dev/null 2>&1; then
+            cat >> "$CONFIG_FILE" <<EOF
+
+          [[vectorize]]
+          binding = "vectorize"
+          index_name = "$INDEX_NAME"
+          EOF
+            echo "✅ Vectorize binding enabled."
+          else
+            echo "::warning::Vectorize index 创建失败, 本次部署不绑定向量检索。"
+          fi
+
       - name: 🚀 开始部署 / Start deployment
         id: deploy
         working-directory: ./mail-worker

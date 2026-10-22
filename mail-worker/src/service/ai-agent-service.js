@@ -11,6 +11,7 @@ import userService from './user-service';
 import roleService from './role-service';
 import aiService from './ai-service';
 import aiMemoryService from './ai-memory-service';
+import aiKnowledgeService from './ai-knowledge-service';
 import webSearchService from './web-search-service';
 import settingService from './setting-service';
 import permService from './perm-service';
@@ -227,11 +228,13 @@ const aiAgentService = {
 		}
 
 		//下面这些取数彼此独立, 并行拉取, 把调用模型前的串行等待压到一次(其中 buildStats 还要对收件做聚合)
-		const [stats, isAdmin, memoryContext] = await Promise.all([
+		const [stats, isAdmin, memoryContext, knowledge] = await Promise.all([
 			this.buildStats(c, userId),
 			this.isAdmin(c, userId, 'user:add'),
 			//把长期记忆与用户画像带上, 让爱蜜莉雅像"记得昴"一样接着聊
-			aiMemoryService.context(c, userId)
+			aiMemoryService.context(c, userId),
+			//知识库按需检索: 未命中返回空串, 不占 token, 也不额外等待(与上面几项并行)
+			aiKnowledgeService.retrieve(c, prompt)
 		]);
 		const dateInfo = [
 			`当前日期: ${dayjs().format('YYYY-MM-DD')}`,
@@ -242,7 +245,7 @@ const aiAgentService = {
 
 		//文本附件并进提问文本, 图片走多模态消息
 		const userText = this.appendTextFiles(prompt, texts);
-		const systemContent = [SYSTEM_PROMPT, PERSONA_PROMPT, memoryContext].filter(Boolean).join('\n\n');
+		const systemContent = [SYSTEM_PROMPT, PERSONA_PROMPT, memoryContext, knowledge].filter(Boolean).join('\n\n');
 		const messages = [
 			{ role: 'system', content: systemContent },
 			...history,

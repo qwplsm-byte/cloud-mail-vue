@@ -43,8 +43,43 @@ const dbInit = {
 		await this.v4_2DB(c);
 		await this.v4_3DB(c);
 		await this.v4_4DB(c);
+		await this.v4_5DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v4_5DB(c) {
+
+		//AI 知识库: 文档按段落切块后写入向量索引, 检索命中才注入提示词; 外部资料(萌娘/维基)落缓存表减少重复请求
+		try {
+			await c.env.db.batch([
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ai_knowledge (
+					ai_knowledge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					title TEXT NOT NULL DEFAULT '',
+					content TEXT NOT NULL DEFAULT '',
+					tags TEXT NOT NULL DEFAULT '',
+					source TEXT NOT NULL DEFAULT 'manual',
+					enabled INTEGER NOT NULL DEFAULT 1,
+					chunk_count INTEGER NOT NULL DEFAULT 0,
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+					update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`),
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ai_knowledge_chunk (
+					chunk_id TEXT PRIMARY KEY,
+					ai_knowledge_id INTEGER NOT NULL,
+					seq INTEGER NOT NULL DEFAULT 0,
+					content TEXT NOT NULL DEFAULT ''
+				)`),
+				c.env.db.prepare(`CREATE TABLE IF NOT EXISTS ai_knowledge_cache (
+					cache_key TEXT PRIMARY KEY,
+					payload TEXT NOT NULL DEFAULT '',
+					expire_time INTEGER NOT NULL DEFAULT 0
+				)`),
+				c.env.db.prepare('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_doc ON ai_knowledge_chunk (ai_knowledge_id)')
+			]);
+		} catch (e) {
+			console.warn(`初始化 AI 知识库表失败：${e.message}`);
+		}
 	},
 
 	async v4_4DB(c) {

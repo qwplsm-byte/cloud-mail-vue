@@ -25,6 +25,13 @@ enabled = true
 [ai]
 binding = "ai"
 
+#可选: AI 知识库向量检索。先创建索引(维度固定 1024, 对应 bge-m3):
+#  npx wrangler vectorize create cloud-mail-ai --dimensions=1024 --metric=cosine
+#再把下面三行取消注释并重新部署; 不配置时自动回落到关键词检索, 功能仍可用
+#[[vectorize]]
+#binding = "vectorize"
+#index_name = "cloud-mail-ai"
+
 [assets]
 binding = "assets"		#静态资源绑定名默认不可修改
 directory = "./dist"	#前端vue项目打包的静态资源存放位置,默认dist
