@@ -17,6 +17,12 @@ app.post('/ai/assistant/execute', async (c) => {
 	return c.json(result.ok(data));
 });
 
+//当前模型的思考等级能力: 不支持的模型返回 supported=false, 前端据此隐藏入口
+app.get('/ai/thinking', async (c) => {
+	const data = await aiAgentService.thinkingOptions(c);
+	return c.json(result.ok(data));
+});
+
 //AI 对话记录: 存服务端, 多设备登录同一账号时同步
 app.get('/ai/chat/history', async (c) => {
 	const data = await aiChatService.history(c, userContext.getUserId(c));

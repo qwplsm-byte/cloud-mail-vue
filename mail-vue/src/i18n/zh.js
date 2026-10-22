@@ -525,6 +525,14 @@ const zh = {
     aiSearchEndpoint: 'SearXNG 实例地址',
     aiSearchEndpointTip: '填支持 JSON 输出的实例，如 https://searx.example.com',
     aiSearchEngineTip: '所选引擎无结果时会自动回退到其它引擎，不需要 Key。',
+    //思考等级: 只对支持的模型展示
+    aiThinking: '思考等级',
+    aiThinkingOff: '关闭',
+    aiThinkingLow: '低',
+    aiThinkingMedium: '中',
+    aiThinkingHigh: '高',
+    aiThinkingOn: '开启',
+    aiThinkingTip: '等级越高越准但更慢、更费 token；关闭最快。',
     //AI 记忆与用户画像
     aiMemory: '记忆',
     aiMemoryTitle: 'AI 记忆',

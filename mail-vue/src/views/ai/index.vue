@@ -206,6 +206,27 @@
     </div>
 
     <div class="ai-input">
+      <!-- 思考等级: 仅当当前模型支持档位调节时展示, 不支持的模型完全隐藏 -->
+      <div class="thinking-tools" v-if="thinkingLevels.length">
+        <el-popover placement="top-start" :width="188" trigger="click" popper-class="thinking-popover">
+          <template #reference>
+            <button class="thinking-btn" :title="$t('aiThinking')">
+              <Icon icon="mdi:brain" :width="15" :height="15" />
+              <span>{{ thinkingText(thinking) }}</span>
+            </button>
+          </template>
+
+          <div class="thinking-set">
+            <div class="set-title">{{ $t('aiThinking') }}</div>
+            <button v-for="lv in thinkingLevels" :key="lv"
+                    class="thinking-opt" :class="{active: thinking === lv}"
+                    @click="setThinking(lv)">
+              {{ thinkingText(lv) }}
+            </button>
+            <div class="set-tip">{{ $t('aiThinkingTip') }}</div>
+          </div>
+        </el-popover>
+      </div>
       <div class="search-tools" :class="{ 'is-on': webSearch }">
         <button class="search-toggle" :title="$t(webSearch ? 'aiWebSearchOn' : 'aiWebSearchOff')"
                 @click="webSearch = !webSearch">
@@ -332,7 +353,8 @@ import {
   aiMemoryDetail,
   aiMemoryRemove,
   aiMemorySave,
-  aiMemorySaveProfile
+  aiMemorySaveProfile,
+  aiThinkingOptions
 } from "@/request/ai.js";
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
@@ -425,6 +447,50 @@ function saveSearchPref() {
     }))
   } catch (e) {
     //忽略隐私模式/超出配额导致的写入失败
+  }
+}
+
+//思考等级: 后端确认当前模型支持才展示入口; 选择结果按设备保存, 换模型后若档位不合法自动回落
+const THINKING_KEY = 'ai_thinking_level'
+const THINKING_LABELS = {off: 'aiThinkingOff', low: 'aiThinkingLow', medium: 'aiThinkingMedium', high: 'aiThinkingHigh'}
+const thinkingType = ref('')
+const thinkingLevels = ref([])
+const thinking = ref(loadThinkingLevel())
+
+function loadThinkingLevel() {
+  try {
+    const raw = localStorage.getItem(THINKING_KEY)
+    return ['off', 'low', 'medium', 'high'].includes(raw) ? raw : 'off'
+  } catch (e) {
+    return 'off'
+  }
+}
+
+//toggle 型模型只有开/关两档, 高档位显示成"开启"更准确
+function thinkingText(level) {
+  return t(thinkingType.value === 'toggle' && level === 'high' ? 'aiThinkingOn' : (THINKING_LABELS[level] || 'aiThinkingOff'))
+}
+
+function setThinking(level) {
+  thinking.value = level
+  try {
+    localStorage.setItem(THINKING_KEY, level)
+  } catch (e) {
+    //忽略写入失败
+  }
+}
+
+async function loadThinking() {
+  try {
+    const data = await aiThinkingOptions()
+    if (!data?.supported || !data.levels?.length) return
+    thinkingType.value = data.type || ''
+    thinkingLevels.value = data.levels
+    if (!data.levels.includes(thinking.value)) {
+      thinking.value = data.levels[0]
+    }
+  } catch (e) {
+    //拿不到能力信息时静默隐藏入口, 不打扰正常对话
   }
 }
 
@@ -530,8 +596,11 @@ function stopTimer() {
   }
 }
 
-//进入页面即拉取服务端对话
-onMounted(loadMessages)
+//进入页面即拉取服务端对话, 同时确认当前模型是否支持调节思考等级
+onMounted(() => {
+  loadMessages()
+  loadThinking()
+})
 
 onBeforeUnmount(() => {
   stopTimer()
@@ -840,7 +909,7 @@ async function submit(text, files = []) {
   scrollToBottom()
 
   try {
-    const data = await aiAssistantPlan(text, history, useSearch, searchEngine.value, searchEndpoint.value.trim(), files)
+    const data = await aiAssistantPlan(text, history, useSearch, searchEngine.value, searchEndpoint.value.trim(), files, thinking.value)
     bot.loading = false
     bot.content = data?.reply || ''
     bot.plan = data?.actions || []
@@ -1984,6 +2053,33 @@ function editProfile() {
     }
   }
 
+  //思考等级: 只有模型支持时才出现, 与联网按钮同高同风格
+  .thinking-tools {
+    flex-shrink: 0;
+    display: inline-flex;
+
+    .thinking-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 38px;
+      padding: 0 10px;
+      border: 1px solid var(--el-border-color);
+      border-radius: 10px;
+      background: var(--el-bg-color);
+      color: var(--el-text-color-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color .18s ease, border-color .18s ease;
+
+      &:hover {
+        color: var(--el-color-primary);
+        border-color: var(--el-color-primary);
+      }
+    }
+  }
+
   //附件按钮与隐藏的文件选择框
   .attach-btn {
     flex-shrink: 0;
@@ -2060,6 +2156,53 @@ function editProfile() {
 
 <!-- 弹层会被 teleport 到 body 外, 所以这层样式不能加 scoped -->
 <style lang="scss">
+.thinking-popover {
+  .thinking-set {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    .set-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+      margin-bottom: 2px;
+    }
+
+    .thinking-opt {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--el-text-color-regular);
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+      transition: background .16s ease, color .16s ease;
+
+      &:hover {
+        background: var(--el-fill-color-light);
+      }
+
+      &.active {
+        color: var(--el-color-primary);
+        border-color: var(--el-color-primary);
+        background: var(--el-color-primary-light-9);
+      }
+    }
+
+    .set-tip {
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--el-text-color-secondary);
+    }
+  }
+}
+
 .search-set-popover {
   .search-set {
     display: flex;

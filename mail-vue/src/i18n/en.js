@@ -524,6 +524,14 @@ const en = {
     aiSearchEndpoint: 'SearXNG instance URL',
     aiSearchEndpointTip: 'Use an instance with JSON enabled, e.g. https://searx.example.com',
     aiSearchEngineTip: 'If the chosen engine returns nothing it falls back to others. No API key needed.',
+    //Thinking level (only shown for supported models)
+    aiThinking: 'Thinking level',
+    aiThinkingOff: 'Off',
+    aiThinkingLow: 'Low',
+    aiThinkingMedium: 'Medium',
+    aiThinkingHigh: 'High',
+    aiThinkingOn: 'On',
+    aiThinkingTip: 'Higher levels are more accurate but slower and cost more tokens. Off is fastest.',
     //AI memory & user profile
     aiMemory: 'Memory',
     aiMemoryTitle: 'AI Memory',

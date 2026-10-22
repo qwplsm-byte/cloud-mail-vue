@@ -24,6 +24,25 @@ const CATEGORY_SYSTEM_PROMPT = 'You classify an email into exactly one category.
 //分类/验证码提取属于超短任务, 正常秒回; 给个短超时兜住慢模型, 避免把整个请求挂死到网关超时
 const QUICK_AI_TIMEOUT_MS = 15 * 1000;
 
+//模型思考能力表: 只收录官方文档明确支持调节思考的模型, 未命中一律视为不支持(前端不展示选项)
+//effort 系列走 reasoning_effort 参数, toggle 系列只有"开/关"没有档位
+const THINKING_RULES = [
+	{ re: /^gpt-5/i, type: 'effort', levels: ['off', 'low', 'medium', 'high'], offValue: 'minimal' },
+	{ re: /^(o1|o3|o4)/i, type: 'effort', levels: ['low', 'medium', 'high'] },
+	{ re: /^gemini-(2\.[5-9]|3)/i, type: 'effort', levels: ['low', 'medium', 'high'] },
+	{ re: /^grok-(3|4)/i, type: 'effort', levels: ['low', 'medium', 'high'] },
+	{ re: /^deepseek/i, type: 'toggle', levels: ['off', 'high'] },
+	{ re: /^(glm-4\.[5-9]|glm-z1)/i, type: 'toggle', levels: ['off', 'high'] },
+	{ re: /^qwen3/i, type: 'toggle', levels: ['off', 'high'] }
+];
+
+//默认关闭思考的参数: 各家写法不同, 一并带上, 接口不认会返回 400 再由调用方重试
+const THINKING_OFF_PARAMS = {
+	thinking: { type: 'disabled' },
+	enable_thinking: false,
+	reasoning_effort: 'none'
+};
+
 //判为"账号"时的确定性兜底特征: 主题/正文/发件人命中任一即保留账号, 否则降级为"其他"。
 //小模型(如 llama-3.1-8b)偶尔会把无关的短邮件判成账号, 这层兜底用于兜住这类抽风。
 const ACCOUNT_HINT_PATTERN = /(验证码|校验码|动态密码|登录|登入|登陆|密码|账号|账户|帐户|安全|激活|注册|验证|verify|verification|validat|\bcode\b|passcode|one[- ]?time|\botp\b|2fa|two[- ]?factor|sign[- ]?in|log[- ]?in|password|\bpin\b|security|activate|activation|confirm|token|account|auth)/i;
@@ -101,13 +120,19 @@ const aiService = {
 		const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
 		try {
-			//推理型模型默认会先生成一大段思考过程, 又慢又容易占满 max_tokens 导致最终答案为空;
-			//先带上关闭思考的参数, 部分接口不认会返回 400, 那就去掉再重试一次
-			let result = await this.requestChat(url, options, model, messages, maxTokens, controller.signal, true);
+			//未指定思考等级时沿用原行为(尝试关闭思考), 保证抽取/分类这类短任务的速度
+			const capability = this.thinkingCapability(model);
+			const thinking = capability && options.thinkingLevel
+				? this.buildThinkingParams(capability, options.thinkingLevel)
+				: THINKING_OFF_PARAMS;
 
-			if (result.status === 400) {
-				console.warn(`AI 接口不接受关闭思考的参数, 去掉后重试 (model=${model}): ${result.text.slice(0, 200)}`);
-				result = await this.requestChat(url, options, model, messages, maxTokens, controller.signal, false);
+			//推理型模型默认会先生成一大段思考过程, 又慢又容易占满 max_tokens 导致最终答案为空;
+			//先带上思考控制参数, 部分接口不认会返回 400, 那就去掉再重试一次
+			let result = await this.requestChat(url, options, model, messages, maxTokens, controller.signal, thinking);
+
+			if (result.status === 400 && thinking) {
+				console.warn(`AI 接口不接受思考控制参数, 去掉后重试 (model=${model}): ${result.text.slice(0, 200)}`);
+				result = await this.requestChat(url, options, model, messages, maxTokens, controller.signal, null);
 			}
 
 			if (!result.ok) {
@@ -150,8 +175,8 @@ const aiService = {
 		}
 	},
 
-	//thinkingOff: 尝试关闭推理模型的思考过程, 让它直接出结果; 不支持的接口会返回 400, 由调用方去掉重试
-	async requestChat(url, options, model, messages, maxTokens, signal, thinkingOff) {
+	//thinking: 要附加到请求体的思考控制参数, null 表示完全不带
+	async requestChat(url, options, model, messages, maxTokens, signal, thinking) {
 		const body = {
 			model,
 			messages,
@@ -159,11 +184,8 @@ const aiService = {
 			max_tokens: maxTokens
 		};
 
-		if (thinkingOff) {
-			//各家关闭思考的写法不同, 一并带上(DeepSeek/火山/通义/OpenAI 网关等)
-			body.thinking = { type: 'disabled' };
-			body.enable_thinking = false;
-			body.reasoning_effort = 'none';
+		if (thinking) {
+			Object.assign(body, thinking);
 		}
 
 		let response;
@@ -192,6 +214,36 @@ const aiService = {
 			contentType: response.headers.get('content-type') || '',
 			text: await response.text()
 		};
+	},
+
+	//返回模型支持的思考档位; 未收录的模型返回 null, 前端据此隐藏思考等级入口
+	thinkingCapability(model) {
+		const name = String(model || '').trim();
+		if (!name) {
+			return null;
+		}
+
+		const rule = THINKING_RULES.find(item => item.re.test(name));
+		if (!rule) {
+			return null;
+		}
+
+		return { type: rule.type, levels: rule.levels.slice(), offValue: rule.offValue || '' };
+	},
+
+	//把用户选的档位翻译成各家的请求参数; 档位不在支持列表时回落到第一个可用档位
+	buildThinkingParams(capability, level) {
+		const target = capability.levels.includes(level) ? level : capability.levels[0];
+
+		if (capability.type === 'effort') {
+			return { reasoning_effort: target === 'off' ? (capability.offValue || 'low') : target };
+		}
+
+		if (target === 'off') {
+			return { thinking: { type: 'disabled' }, enable_thinking: false };
+		}
+
+		return { thinking: { type: 'enabled' }, enable_thinking: true };
 	},
 
 	describeFetchError(e, url, model) {
