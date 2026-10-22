@@ -354,9 +354,11 @@ const emailService = {
 		const domain = emailUtils.getDomain(accountRow.email);
 		const resendToken = resendTokens[domain];
 		const useCloudflareEmail = !!c.env.email;
+		//Brevo 作为兜底发信通道, 供 Resend 不支持的域名(如国际化域名)使用
+		const brevoApiKey = c.env.BREVO_API_KEY;
 
 		//如果接收方存在站外邮箱，又没有发信服务
-		if (!useCloudflareEmail && !resendToken && !allInternal) {
+		if (!useCloudflareEmail && !resendToken && !brevoApiKey && !allInternal) {
 			throw new BizError(t('noSendProvider'));
 		}
 
@@ -397,7 +399,7 @@ const emailService = {
 					sendType,
 					messageId: emailRow.messageId
 				});
-			} else {
+			} else if (resendToken) {
 				sendResult = await this.sendByResend(resendToken, {
 					name,
 					accountEmail: accountRow.email,
@@ -406,6 +408,20 @@ const emailService = {
 					text,
 					html,
 					attachments: [...imageDataList, ...attachments],
+					sendType,
+					messageId: emailRow.messageId
+				});
+			} else {
+				sendResult = await this.sendByBrevo(brevoApiKey, {
+					name,
+					accountEmail: accountRow.email,
+					receiveEmail,
+					subject,
+					text,
+					html,
+					imageDataList,
+					r2Domain,
+					attachments,
 					sendType,
 					messageId: emailRow.messageId
 				});
@@ -553,6 +569,112 @@ const emailService = {
 		}
 
 		return await resend.emails.send(sendForm);
+	},
+
+	async sendByBrevo(apiKey, params) {
+		//Brevo 事务邮件不支持 CID 内嵌图片, 正文图片需换成 data URI 或对象存储外链
+		const html = this.toBrevoHtml(params.html, params.imageDataList, params.r2Domain);
+
+		const sendForm = {
+			sender: { name: params.name, email: params.accountEmail },
+			to: params.receiveEmail.map(email => ({ email })),
+			subject: params.subject
+		};
+
+		if (html) {
+			sendForm.htmlContent = html;
+		}
+
+		if (params.text) {
+			sendForm.textContent = params.text;
+		}
+
+		const attachments = await this.toBrevoAttachments(params.attachments);
+		if (attachments.length > 0) {
+			sendForm.attachment = attachments;
+		}
+
+		if (params.sendType === 'reply' && params.messageId) {
+			sendForm.headers = {
+				'in-reply-to': params.messageId,
+				'references': params.messageId
+			};
+		}
+
+		const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+			method: 'POST',
+			headers: {
+				'api-key': apiKey,
+				'content-type': 'application/json',
+				accept: 'application/json'
+			},
+			body: JSON.stringify(sendForm)
+		});
+
+		const result = await response.json().catch(() => ({}));
+
+		if (!response.ok) {
+			return {
+				error: {
+					message: result?.message || `Brevo send failed: ${response.status}`
+				}
+			};
+		}
+
+		return {
+			data: {
+				id: result?.messageId
+			}
+		};
+	},
+
+	toBrevoHtml(html, imageDataList = [], r2Domain) {
+		if (!html) {
+			return html;
+		}
+
+		const { document } = parseHTML(html);
+		const images = Array.from(document.querySelectorAll('img'));
+		const ossDomain = r2Domain ? domainUtils.toOssDomain(r2Domain) : '';
+
+		for (const img of images) {
+			const src = img.getAttribute('src');
+			if (!src || !src.startsWith('cid:')) {
+				continue;
+			}
+
+			const cid = src.replace(/^cid:/, '');
+			const image = imageDataList.find(item => (item.contentId || '').replace(/^<|>$/g, '') === cid);
+			if (!image) {
+				continue;
+			}
+
+			if (image.content) {
+				img.setAttribute('src', `data:${image.mimeType || 'image/png'};base64,${image.content}`);
+			} else if (ossDomain && image.key) {
+				img.setAttribute('src', `${ossDomain}/${image.key}`);
+			}
+		}
+
+		return document.toString();
+	},
+
+	async toBrevoAttachments(attachments = []) {
+		const result = [];
+
+		for (const attachment of attachments) {
+			const content = await this.toAttachmentBase64(attachment);
+			if (!content) {
+				continue;
+			}
+
+			result.push({
+				content,
+				name: attachment.filename
+			});
+		}
+
+		return result;
 	},
 
 	async toCloudflareAttachments(attachments) {

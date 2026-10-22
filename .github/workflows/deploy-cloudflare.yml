@@ -33,6 +33,7 @@ jobs:
       PROJECT_LINK: ${{ secrets.PROJECT_LINK || vars.PROJECT_LINK }}
       AI_MODEL: ${{ secrets.AI_MODEL || vars.AI_MODEL || '@cf/meta/llama-3.1-8b-instruct-fast' }}
       CLOUDFLARE_EMAIL: ${{ secrets.CF_EMAIL || vars.CF_EMAIL || false }}
+      BREVO_API_KEY: ${{ secrets.BREVO_API_KEY || vars.BREVO_API_KEY }}
       ANALYSIS_CACHE: ${{ secrets.ANALYSIS_CACHE || vars.ANALYSIS_CACHE || false }}
 
 
@@ -211,6 +212,19 @@ jobs:
           
           sed -i "s|\${D1_DATABASE_ID}|$D1_ID|g" "$CONFIG_FILE"
           echo "✅ Setup completed."
+
+      - name: 🔐 注入发信密钥 / Inject mail provider secrets
+        working-directory: ./mail-worker
+        run: |
+          if [ -n "$BREVO_API_KEY" ]; then
+            if echo "$BREVO_API_KEY" | pnpm wrangler secret put BREVO_API_KEY -c wrangler-action.toml; then
+              echo "✅ BREVO_API_KEY secret updated."
+            else
+              echo "::warning:: Failed to set BREVO_API_KEY secret."
+            fi
+          else
+            echo "ℹ️ BREVO_API_KEY not set, skipping."
+          fi
 
       - name: 🚀 开始部署 / Start deployment
         id: deploy
