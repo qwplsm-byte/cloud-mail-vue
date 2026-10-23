@@ -340,7 +340,7 @@
 </template>
 
 <script setup>
-import {computed, defineOptions, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from "vue";
+import {computed, defineOptions, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {ElMessage, ElMessageBox} from "element-plus";
 import {
@@ -503,13 +503,84 @@ let timerId = null
 //初次从服务端拉取期间不触发回写, 避免把刚读到的记录再存一遍
 let hydrating = true
 let saveTimer = null
+//首次拉取完成前, 切回页面不需要重复请求
+let historyLoaded = false
+let loadingHistory = false
+//记录每条消息上次提交时的内容快照, 只把真的变了的消息写给服务端
+const savedSnapshot = new Map()
 
-function buildStored() {
-  return messages.value.slice(-MAX_STORED).map(({id, role, content, plan, status, results, error, sources, searchFailed, attachments: files}) => ({
-    id, role, content, plan, status, results, error, sources, searchFailed,
-    //附件只留文件名/类型: 图片 base64 太大且不需要长期保存
-    attachments: files ? files.map(({key, type, name}) => ({key, type, name})) : undefined
-  }))
+//附件只留文件名/类型: 图片 base64 太大且不需要长期保存
+function stripAttachments(files) {
+  return files ? files.map(({key, type, name}) => ({key, type, name})) : undefined
+}
+
+function snapshotOf(item) {
+  return JSON.stringify({
+    role: item.role,
+    content: item.content || '',
+    plan: item.plan || null,
+    status: item.status || null,
+    results: item.results || null,
+    error: item.error || null,
+    sources: item.sources || null,
+    searchFailed: !!item.searchFailed,
+    attachments: stripAttachments(item.attachments) || null
+  })
+}
+
+//消息 id 前缀是生成时间(36 进制), 用于把本地新增消息排到服务端记录之后
+function messageTime(item) {
+  const prefix = String(item?.id || '').split('-')[0]
+  const value = parseInt(prefix, 36)
+  return Number.isFinite(value) ? value : 0
+}
+
+//服务端记录为准, 本地正在请求中的消息优先, 本地独有的追加在末尾
+function mergeMessages(local, remote) {
+  const merged = []
+  const seen = new Set()
+
+  for (const item of remote) {
+    const mine = local.find(entry => entry.id === item.id)
+    merged.push(mine && mine.loading ? mine : item)
+    seen.add(item.id)
+  }
+
+  const extras = local
+    .filter(item => !seen.has(item.id))
+    .sort((a, b) => messageTime(a) - messageTime(b))
+
+  return [...merged, ...extras].slice(-MAX_STORED)
+}
+
+function collectDirty() {
+  return messages.value
+    .slice(-MAX_STORED)
+    .filter(item => savedSnapshot.get(item.id) !== snapshotOf(item))
+    .map(item => ({
+      id: item.id,
+      role: item.role,
+      content: item.content,
+      plan: item.plan,
+      status: item.status,
+      results: item.results,
+      error: item.error,
+      sources: item.sources,
+      searchFailed: item.searchFailed,
+      attachments: stripAttachments(item.attachments)
+    }))
+}
+
+//只提交变化的消息, 避免把旧快照整段覆盖到服务端较新的记录上
+async function flushSave() {
+  const dirty = collectDirty()
+
+  if (!dirty.length) {
+    return
+  }
+
+  await aiChatSave(dirty)
+  dirty.forEach(item => savedSnapshot.set(item.id, snapshotOf(item)))
 }
 
 //改动频繁(追加/状态变化), 合并成一次提交
@@ -517,9 +588,10 @@ function scheduleSave() {
   if (hydrating) {
     return
   }
+
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    aiChatSave(buildStored()).catch(() => {
+    flushSave().catch(() => {
       //保存失败不影响本地使用, 下次改动会再尝试
     })
   }, 600)
@@ -527,30 +599,50 @@ function scheduleSave() {
 
 watch(messages, scheduleSave, {deep: true})
 
-//进入页面时从服务端拉取该账号的对话, 实现跨设备同步
-async function loadMessages() {
+//从服务端拉取该账号的对话并按 id 合并, 实现跨设备同步
+async function loadMessages({ migrate = true } = {}) {
+  if (loadingHistory) {
+    return
+  }
+
+  loadingHistory = true
+
   try {
     const data = await aiChatHistory()
     const list = Array.isArray(data?.messages) ? data.messages : []
 
     //服务端还没有记录, 但本浏览器存在旧版本地记录时, 一次性搬上去, 避免老用户历史丢失
-    if (!list.length) {
+    if (!list.length && migrate) {
       const legacy = takeLegacyMessages()
 
       if (legacy.length) {
         messages.value = legacy
-        aiChatSave(buildStored()).catch(() => {
-        })
+        await flushSave().catch(() => {})
         return
       }
     }
 
-    messages.value = list
+    messages.value = mergeMessages(messages.value, list)
+    //服务端已存的内容不必再回写
+    list.forEach(item => savedSnapshot.set(item.id, snapshotOf(item)))
   } catch (e) {
-    //拉取失败保持空对话, 不影响页面使用
+    //拉取失败保持当前对话, 不影响页面使用
   } finally {
+    loadingHistory = false
     hydrating = false
+    historyLoaded = true
     scrollToBottom()
+  }
+}
+
+//keep-alive 与 PWA 都不会重新挂载页面, 切回前台时补拉一次才能看到别的设备的新消息
+function refreshFromServer() {
+  loadMessages({ migrate: false })
+}
+
+function handleVisibility() {
+  if (document.visibilityState === 'visible' && historyLoaded) {
+    refreshFromServer()
   }
 }
 
@@ -600,16 +692,25 @@ function stopTimer() {
 onMounted(() => {
   loadMessages()
   loadThinking()
+  document.addEventListener('visibilitychange', handleVisibility)
+})
+
+//keep-alive 缓存下切回本页不会重新挂载, 这里补拉才能拿到别的设备刚写的新消息
+onActivated(() => {
+  if (historyLoaded) {
+    refreshFromServer()
+  }
 })
 
 onBeforeUnmount(() => {
   stopTimer()
+  document.removeEventListener('visibilitychange', handleVisibility)
   //离开前把尚未落库的改动补存一次
   if (saveTimer) {
     clearTimeout(saveTimer)
     saveTimer = null
     if (!hydrating) {
-      aiChatSave(buildStored()).catch(() => {})
+      flushSave().catch(() => {})
     }
   }
 })
@@ -993,6 +1094,8 @@ function clearConversation() {
     type: 'warning',
   }).then(() => {
     messages.value = []
+    //清掉快照, 否则刚删的消息会被判定为"已存"而不再回写
+    savedSnapshot.clear()
     //同时清掉服务端记录, 否则换设备会重新拉回旧对话
     aiChatClear().catch(() => {
     })
