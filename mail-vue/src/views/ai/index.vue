@@ -3,7 +3,9 @@
     <!-- 左侧半身 Live2D 形象; 关闭开关或没有任何模型时整块不渲染, 布局自动降级回原来的全屏对话 -->
     <aside v-if="live2dShown" class="ai-live2d">
       <div class="live2d-glow"></div>
-      <Live2DView :url="currentLive2d.url" @ready="live2dError = ''" @error="onLive2dError"/>
+      <Live2DView :url="currentLive2d.type === 'url' ? currentLive2d.url : ''"
+                  :local-id="currentLive2d.type === 'local' ? currentLive2d.id : ''"
+                  @ready="live2dError = ''" @error="onLive2dError"/>
       <div class="live2d-foot">
         <span class="live2d-name">{{ currentLive2d.name }}</span>
         <button class="live2d-btn" :title="$t('aiLive2dTitle')" @click="live2dVisible = true">
@@ -369,16 +371,38 @@
 
         <div class="panel-label">{{ $t('aiLive2dModels') }}</div>
         <div v-if="live2d.models.length" class="model-list">
-          <div v-for="item in live2d.models" :key="item.url" class="model-item"
-               :class="{ active: item.url === live2d.current }" @click="selectLive2dModel(item)">
+          <div v-for="item in live2d.models" :key="item.key" class="model-item"
+               :class="{ active: item.key === live2d.current }" @click="selectLive2dModel(item)">
             <span class="model-dot"></span>
             <span class="model-name">{{ item.name }}</span>
+            <span class="model-tag">{{ item.type === 'local' ? $t('aiLive2dLocalTag') : 'URL' }}</span>
             <button class="model-del" :title="$t('aiLive2dDelete')" @click.stop="removeLive2dModel(item)">
               <Icon icon="mdi:delete-outline" :width="16" :height="16"/>
             </button>
           </div>
         </div>
         <div v-else class="model-empty">{{ $t('aiLive2dEmpty') }}</div>
+
+        <!-- 本地上传: 压缩包 / 整套文件夹 / 多选文件, 全部存本地, 断网也能用 -->
+        <div class="add-box upload-box">
+          <div class="panel-label">{{ $t('aiLive2dUpload') }}</div>
+          <div class="upload-actions">
+            <el-button size="small" :loading="uploadingModel" @click="fileInputRef?.click()">
+              <Icon icon="mdi:folder-zip-outline" :width="15" :height="15"/>
+              <span>{{ $t('aiLive2dUploadFiles') }}</span>
+            </el-button>
+            <el-button size="small" :loading="uploadingModel" @click="folderInputRef?.click()">
+              <Icon icon="mdi:folder-open-outline" :width="15" :height="15"/>
+              <span>{{ $t('aiLive2dUploadFolder') }}</span>
+            </el-button>
+          </div>
+          <div class="upload-tip">{{ $t('aiLive2dUploadTip') }}</div>
+          <input ref="fileInputRef" class="hidden-input" type="file" multiple
+                 accept=".zip,.json,.moc3,.png,.jpg,.jpeg,.webp,.mtn,.wav,.mp3"
+                 @change="onModelFilesChange"/>
+          <input ref="folderInputRef" class="hidden-input" type="file" webkitdirectory multiple
+                 @change="onModelFilesChange"/>
+        </div>
 
         <div class="add-box">
           <div class="panel-label">{{ $t('aiLive2dAddTitle') }}</div>
@@ -416,6 +440,13 @@ import {
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
 import Live2DView from "./Live2DView.vue";
+import {
+  deleteLocalModel,
+  detectModelCandidates,
+  newLocalModelId,
+  readUploadFiles,
+  saveUploadedModel
+} from "./live2dLocal.js";
 //AI 助手形象: 侧边栏与对话页共用同一张头像(暂为鲸娘图片)
 import whaleAvatar from "@/assets/whale-girl.png";
 
@@ -446,34 +477,65 @@ const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'csv', 'log', 'yml', 'yaml', 
 const messages = ref([])
 const elapsed = ref(0)
 
-//AI 形象(Live2D): 偏好存本地, 模型列表用 URL 方式自定义
-const LIVE2D_KEY = 'ai_live2d_v1'
+//AI 形象(Live2D): 偏好存本地; 模型支持远程 URL 与本地上传(压缩包/文件夹)
+const LIVE2D_KEY = 'ai_live2d_v2'
+const LEGACY_KEY = 'ai_live2d_v1'
 const live2dVisible = ref(false)
 const live2d = reactive({enabled: false, models: [], current: ''})
 const live2dError = ref('')
 const newModelName = ref('')
 const newModelUrl = ref('')
+const uploadingModel = ref(false)
+const fileInputRef = ref(null)
+const folderInputRef = ref(null)
 loadLive2dPref()
 
-const currentLive2d = computed(() => live2d.models.find(item => item.url === live2d.current) || live2d.models[0])
+const currentLive2d = computed(() => live2d.models.find(item => item.key === live2d.current) || live2d.models[0] || null)
 //关闭开关或没有可用模型时, 侧栏整体不渲染, 对话页回到原来的全屏布局
 const live2dShown = computed(() => live2d.enabled && !!currentLive2d.value)
 
-function loadLive2dPref() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(LIVE2D_KEY) || 'null')
-    if (!raw || !Array.isArray(raw.models)) return
-    live2d.models = raw.models
-      .filter(item => item && typeof item.name === 'string' && typeof item.url === 'string')
-      .map(item => ({name: item.name, url: item.url}))
-    live2d.current = raw.current || live2d.models[0]?.url || ''
-    if (!live2d.models.some(item => item.url === live2d.current)) {
-      live2d.current = live2d.models[0]?.url || ''
-    }
-    live2d.enabled = !!raw.enabled && live2d.models.length > 0
-  } catch (e) {
-    //本地存档损坏时按未启用处理
+function normalizeModel(item) {
+  if (!item || typeof item.name !== 'string') return null
+  if (item.type === 'local' && typeof item.id === 'string') {
+    return {key: 'local:' + item.id, type: 'local', name: item.name, id: item.id}
   }
+  if (typeof item.url === 'string' && item.url) {
+    return {key: 'url:' + item.url, type: 'url', name: item.name, url: item.url}
+  }
+  return null
+}
+
+function loadLive2dPref() {
+  let raw = null
+  try {
+    raw = JSON.parse(localStorage.getItem(LIVE2D_KEY) || 'null')
+  } catch (e) {
+    raw = null
+  }
+  //旧版本只支持 URL 模型, 这里做一次结构迁移
+  if (!raw) {
+    try {
+      const legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || 'null')
+      if (legacy && Array.isArray(legacy.models)) {
+        legacy.models = legacy.models.map(item => item && item.url
+          ? {type: 'url', name: item.name, url: item.url}
+          : null).filter(Boolean)
+        legacy.current = legacy.current ? 'url:' + legacy.current : ''
+        raw = legacy
+      }
+    } catch (e) {
+      raw = null
+    }
+  }
+  if (!raw || !Array.isArray(raw.models)) return
+
+  live2d.models = raw.models.map(normalizeModel).filter(Boolean)
+  live2d.current = raw.current || live2d.models[0]?.key || ''
+  if (!live2d.models.some(item => item.key === live2d.current)) {
+    live2d.current = live2d.models[0]?.key || ''
+  }
+  live2d.enabled = !!raw.enabled && live2d.models.length > 0
+  saveLive2dPref()
 }
 
 function saveLive2dPref() {
@@ -489,7 +551,7 @@ function saveLive2dPref() {
 }
 
 function selectLive2dModel(item) {
-  live2d.current = item.url
+  live2d.current = item.key
   live2dError.value = ''
   saveLive2dPref()
 }
@@ -509,7 +571,7 @@ function addLive2dModel() {
     ElMessage({message: t('aiLive2dNameEmpty'), type: 'warning', plain: true, grouping: true})
     return
   }
-  if (!/\.model3\.json($|\?)/i.test(url)) {
+  if (!/\.model(3)?\.json($|\?)/i.test(url)) {
     ElMessage({message: t('aiLive2dUrlInvalid'), type: 'warning', plain: true, grouping: true})
     return
   }
@@ -517,21 +579,79 @@ function addLive2dModel() {
     ElMessage({message: t('aiLive2dExist'), type: 'warning', plain: true, grouping: true})
     return
   }
-  live2d.models.push({name, url})
-  live2d.current = url
+  live2d.models.push({key: 'url:' + url, type: 'url', name, url})
+  live2d.current = 'url:' + url
   live2dError.value = ''
   newModelName.value = ''
   newModelUrl.value = ''
+  live2d.enabled = true
   saveLive2dPref()
   ElMessage({message: t('aiLive2dAdded'), type: 'success', plain: true, grouping: true})
 }
 
+function guessModelName(files, candidate) {
+  if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
+    return files[0].name.replace(/\.zip$/i, '').slice(0, 40)
+  }
+  const relative = files.find(file => file.webkitRelativePath)?.webkitRelativePath
+  if (relative) return relative.split('/')[0].slice(0, 40)
+  const path = candidate.entry.path
+  if (path.includes('/')) return path.split('/')[0].slice(0, 40)
+  return path.replace(/\.model(3)?\.json$/i, '').slice(0, 40) || '本地模型'
+}
+
+async function onModelFilesChange(event) {
+  const input = event.target
+  const files = Array.from(input.files || [])
+  //清空 input, 方便再次选择同一个文件
+  input.value = ''
+  if (!files.length) return
+
+  uploadingModel.value = true
+  try {
+    const entries = await readUploadFiles(files)
+    const candidates = detectModelCandidates(entries)
+    if (!candidates.length) {
+      ElMessage({message: t('aiLive2dNoModelFile'), type: 'warning', plain: true, grouping: true})
+      return
+    }
+    const candidate = candidates[0]
+    const name = newModelName.value.trim() || guessModelName(files, candidate)
+    const id = newLocalModelId()
+    await saveUploadedModel({id, name, entries, candidate})
+
+    const item = {key: 'local:' + id, type: 'local', name, id}
+    live2d.models.push(item)
+    live2d.current = item.key
+    live2d.enabled = true
+    live2dError.value = ''
+    newModelName.value = ''
+    saveLive2dPref()
+    ElMessage({message: t('aiLive2dUploaded'), type: 'success', plain: true, grouping: true})
+  } catch (e) {
+    const code = e && e.code
+    let message = t('aiLive2dUploadFail')
+    if (code === 'NO_MODEL') message = t('aiLive2dNoModelFile')
+    else if (code === 'MISSING_FILES') message = t('aiLive2dMissingFiles') + (e.message || '')
+    else if (code === 'TOO_LARGE') message = t('aiLive2dTooLarge')
+    else if (code === 'QUOTA') message = t('aiLive2dQuota')
+    else if (code === 'ZIP_INVALID') message = t('aiLive2dZipInvalid')
+    ElMessage({message, type: 'error', plain: true, grouping: true})
+    console.warn('[live2d] upload failed', e)
+  } finally {
+    uploadingModel.value = false
+  }
+}
+
 function removeLive2dModel(item) {
-  const index = live2d.models.findIndex(model => model.url === item.url)
+  const index = live2d.models.findIndex(model => model.key === item.key)
   if (index < 0) return
   live2d.models.splice(index, 1)
-  if (live2d.current === item.url) {
-    live2d.current = live2d.models[0]?.url || ''
+  if (item.type === 'local' && item.id) {
+    deleteLocalModel(item.id).catch(e => console.warn('[live2d] delete local model failed', e))
+  }
+  if (live2d.current === item.key) {
+    live2d.current = live2d.models[0]?.key || ''
   }
   if (!live2d.models.length) live2d.enabled = false
   live2dError.value = ''
@@ -2691,6 +2811,32 @@ function editProfile() {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .model-tag {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-darker);
+  }
+
+  .upload-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .upload-tip {
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .hidden-input {
+    display: none;
   }
 
   .model-del {

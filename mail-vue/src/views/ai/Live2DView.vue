@@ -18,13 +18,17 @@
 import {defineOptions, onBeforeUnmount, onMounted, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import i18n from "@/i18n/index.js";
+import {loadLocalModelFiles} from "./live2dLocal.js";
 
 defineOptions({
   name: 'Live2DView'
 })
 
 const props = defineProps({
-  url: {type: String, required: true},
+  //远程模型地址(.model3.json / .model.json)
+  url: {type: String, default: ''},
+  //本地上传模型的 IndexedDB id, 与 url 二选一
+  localId: {type: String, default: ''},
   name: {type: String, default: ''},
 })
 
@@ -58,21 +62,26 @@ function loadScript(src) {
   })
 }
 
-//Cubism4 SDK 核心必须先于插件模块执行, 否则模块初始化会直接抛错
+//Cubism2.1 与 Cubism3/4 两套核心都要先于插件模块执行:
+//插件总包在模块初始化阶段会同时检查 window.Live2D 与 window.Live2DCubismCore
 async function ensureRuntime() {
+  if (!window.Live2D) {
+    await loadScript(import.meta.env.BASE_URL + 'live2d/live2d.min.js')
+  }
   if (!window.Live2DCubismCore) {
     await loadScript(import.meta.env.BASE_URL + 'live2d/live2dcubismcore.min.js')
   }
-  if (!window.Live2DCubismCore) {
-    throw new Error('Cubism4 runtime missing')
+  if (!window.Live2D || !window.Live2DCubismCore) {
+    throw new Error('Live2D runtime missing')
   }
   if (!pixiModule) {
     const pixi = await import('pixi.js')
     //插件内部部分能力(如 autoInteract)会从 window.PIXI 取 Ticker/InteractionManager
     window.PIXI = pixi
-    const cubism4 = await import('pixi-live2d-display/cubism4')
+    //总包同时支持 Cubism 2.1 与 Cubism 3/4, 具体版本由模型设置文件自动判断
+    const live2dModule = await import('pixi-live2d-display')
     pixiModule = pixi
-    Live2DModel = cubism4.Live2DModel
+    Live2DModel = live2dModule.Live2DModel
   }
 }
 
@@ -150,7 +159,16 @@ async function mount() {
     host.appendChild(view)
     app = appInstance
 
-    const live2d = await Live2DModel.from(props.url, {autoInteract: true})
+    let source
+    if (props.localId) {
+      //本地上传: 还原成带相对路径的 File 列表, 插件会自动找设置文件并解析内部资源
+      source = await loadLocalModelFiles(props.localId)
+    } else if (props.url) {
+      source = props.url
+    } else {
+      throw new Error('empty model source')
+    }
+    const live2d = await Live2DModel.from(source, {autoInteract: true})
     if (destroyed || seq !== loadSeq) {
       try {
         live2d.destroy()
@@ -182,13 +200,14 @@ async function mount() {
     if (destroyed || seq !== loadSeq) return
     cleanup()
     status.value = 'error'
-    errorText.value = t('aiLive2dLoadFail')
-    emit('error', t('aiLive2dLoadFail'))
-    console.warn('[live2d] load failed', props.url, e && (e.stack || e.message || String(e)))
+    const message = e && e.code === 'LOCAL_MISSING' ? t('aiLive2dLocalMissing') : t('aiLive2dLoadFail')
+    errorText.value = message
+    emit('error', message)
+    console.warn('[live2d] load failed', props.localId || props.url, e && (e.stack || e.message || String(e)))
   }
 }
 
-watch(() => props.url, () => {
+watch(() => [props.url, props.localId], () => {
   if (!destroyed) mount()
 })
 
