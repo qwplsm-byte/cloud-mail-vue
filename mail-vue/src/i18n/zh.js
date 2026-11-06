@@ -591,6 +591,7 @@ const zh = {
     aiLive2dAddTitle: '添加模型',
     aiLive2dName: '模型名称（如：爱蜜莉雅）',
     aiLive2dUrl: '模型地址（.model3.json / .model.json）',
+    aiLive2dUrlHint: '填设置文件的直链，例如 https://cdn.jsdelivr.net/gh/用户/仓库@main/模型/xxx.model3.json；不要填文件夹或网页地址。',
     aiLive2dAdd: '添加',
     aiLive2dDelete: '删除',
     aiLive2dDone: '完成',

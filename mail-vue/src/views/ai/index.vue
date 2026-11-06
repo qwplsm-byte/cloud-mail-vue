@@ -408,6 +408,7 @@
           <div class="panel-label">{{ $t('aiLive2dAddTitle') }}</div>
           <el-input v-model="newModelName" size="small" maxlength="40" :placeholder="$t('aiLive2dName')"/>
           <el-input v-model="newModelUrl" size="small" :placeholder="$t('aiLive2dUrl')"/>
+          <div class="panel-tip">{{ $t('aiLive2dUrlHint') }}</div>
           <el-button size="small" type="primary" plain @click="addLive2dModel">{{ $t('aiLive2dAdd') }}</el-button>
         </div>
 

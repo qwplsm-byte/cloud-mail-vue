@@ -590,6 +590,7 @@ const en = {
     aiLive2dAddTitle: 'Add model',
     aiLive2dName: 'Model name (e.g. Emilia)',
     aiLive2dUrl: 'Model URL (.model3.json / .model.json)',
+    aiLive2dUrlHint: 'Use the direct link to the settings file, e.g. https://cdn.jsdelivr.net/gh/user/repo@main/model/xxx.model3.json. Do not use a folder or page URL.',
     aiLive2dAdd: 'Add',
     aiLive2dDelete: 'Delete',
     aiLive2dDone: 'Done',

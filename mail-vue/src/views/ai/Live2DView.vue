@@ -97,7 +97,8 @@ function fit() {
   const {w, h} = sizeOfHost()
   if (!w || !h) return
   app.renderer.resize(w, h)
-  const scale = Math.max((w / baseWidth) * 1.55, h / baseHeight)
+  //半身取景: 先保证铺满宽度, 再限制放大倍数, 避免窄栏里只剩头顶
+  const scale = Math.max(w / baseWidth, Math.min((h / baseHeight) * 1.25, (w / baseWidth) * 2.2))
   model.scale.set(scale)
   model.anchor.set(0.5, 0)
   model.x = w / 2
