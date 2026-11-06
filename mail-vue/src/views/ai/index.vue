@@ -1,5 +1,19 @@
 <template>
   <div class="ai-page">
+    <!-- 左侧半身 Live2D 形象; 关闭开关或没有任何模型时整块不渲染, 布局自动降级回原来的全屏对话 -->
+    <aside v-if="live2dShown" class="ai-live2d">
+      <div class="live2d-glow"></div>
+      <Live2DView :url="currentLive2d.url" @ready="live2dError = ''" @error="onLive2dError"/>
+      <div class="live2d-foot">
+        <span class="live2d-name">{{ currentLive2d.name }}</span>
+        <button class="live2d-btn" :title="$t('aiLive2dTitle')" @click="live2dVisible = true">
+          <Icon icon="mdi:tune-variant" :width="15" :height="15"/>
+        </button>
+      </div>
+      <div v-if="live2dError" class="live2d-err">{{ live2dError }}</div>
+    </aside>
+
+    <div class="ai-right">
     <div class="ai-head">
       <div class="head-badge">
         <img class="badge-img" :src="whaleAvatar" alt=""/>
@@ -11,6 +25,10 @@
       <el-button text class="head-memory" :title="$t('aiMemoryTitle')" @click="openMemory">
         <Icon icon="mdi:brain" :width="16" :height="16" />
         <span>{{ $t('aiMemory') }}</span>
+      </el-button>
+      <el-button text class="head-live2d" :title="$t('aiLive2dTitle')" @click="live2dVisible = true">
+        <Icon icon="mdi:account-star-outline" :width="16" :height="16" />
+        <span>{{ $t('aiLive2d') }}</span>
       </el-button>
       <el-button v-if="messages.length" text class="head-clear" @click="clearConversation">
         <Icon icon="mdi:broom" :width="16" :height="16" />
@@ -275,6 +293,7 @@
         <Icon icon="mdi:send" :width="18" :height="18" />
       </el-button>
     </div>
+    </div><!-- /.ai-right -->
 
     <!-- AI 记忆与用户画像: 查看/增删爱蜜莉雅记住的长期信息 -->
     <el-drawer v-model="memoryVisible" :title="$t('aiMemoryTitle')" size="420px" class="memory-drawer">
@@ -336,6 +355,44 @@
         <el-button type="primary" :loading="editLoading" @click="saveMemory">{{ $t('confirm') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 形象: 开关 + 模型自定义(添加/删除/切换), 关闭后对话页恢复全屏布局 -->
+    <el-dialog v-model="live2dVisible" :title="$t('aiLive2dTitle')" width="460px" append-to-body class="live2d-dialog">
+      <div class="live2d-panel">
+        <div class="live2d-row">
+          <div class="row-text">
+            <div class="row-title">{{ $t('aiLive2dEnable') }}</div>
+            <div class="row-desc">{{ $t('aiLive2dDesc') }}</div>
+          </div>
+          <el-switch v-model="live2d.enabled" @change="onLive2dToggle"/>
+        </div>
+
+        <div class="panel-label">{{ $t('aiLive2dModels') }}</div>
+        <div v-if="live2d.models.length" class="model-list">
+          <div v-for="item in live2d.models" :key="item.url" class="model-item"
+               :class="{ active: item.url === live2d.current }" @click="selectLive2dModel(item)">
+            <span class="model-dot"></span>
+            <span class="model-name">{{ item.name }}</span>
+            <button class="model-del" :title="$t('aiLive2dDelete')" @click.stop="removeLive2dModel(item)">
+              <Icon icon="mdi:delete-outline" :width="16" :height="16"/>
+            </button>
+          </div>
+        </div>
+        <div v-else class="model-empty">{{ $t('aiLive2dEmpty') }}</div>
+
+        <div class="add-box">
+          <div class="panel-label">{{ $t('aiLive2dAddTitle') }}</div>
+          <el-input v-model="newModelName" size="small" maxlength="40" :placeholder="$t('aiLive2dName')"/>
+          <el-input v-model="newModelUrl" size="small" :placeholder="$t('aiLive2dUrl')"/>
+          <el-button size="small" type="primary" plain @click="addLive2dModel">{{ $t('aiLive2dAdd') }}</el-button>
+        </div>
+
+        <div class="panel-tip">{{ $t('aiLive2dTip') }}</div>
+      </div>
+      <template #footer>
+        <el-button @click="live2dVisible = false">{{ $t('aiLive2dDone') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -358,6 +415,7 @@ import {
 } from "@/request/ai.js";
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
+import Live2DView from "./Live2DView.vue";
 //AI 助手形象: 侧边栏与对话页共用同一张头像(暂为鲸娘图片)
 import whaleAvatar from "@/assets/whale-girl.png";
 
@@ -387,6 +445,102 @@ const MAX_TEXT_CHARS = 12000
 const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'csv', 'log', 'yml', 'yaml', 'ini', 'conf', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'go', 'sql', 'sh']
 const messages = ref([])
 const elapsed = ref(0)
+
+//AI 形象(Live2D): 偏好存本地, 模型列表用 URL 方式自定义
+const LIVE2D_KEY = 'ai_live2d_v1'
+const live2dVisible = ref(false)
+const live2d = reactive({enabled: false, models: [], current: ''})
+const live2dError = ref('')
+const newModelName = ref('')
+const newModelUrl = ref('')
+loadLive2dPref()
+
+const currentLive2d = computed(() => live2d.models.find(item => item.url === live2d.current) || live2d.models[0])
+//关闭开关或没有可用模型时, 侧栏整体不渲染, 对话页回到原来的全屏布局
+const live2dShown = computed(() => live2d.enabled && !!currentLive2d.value)
+
+function loadLive2dPref() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LIVE2D_KEY) || 'null')
+    if (!raw || !Array.isArray(raw.models)) return
+    live2d.models = raw.models
+      .filter(item => item && typeof item.name === 'string' && typeof item.url === 'string')
+      .map(item => ({name: item.name, url: item.url}))
+    live2d.current = raw.current || live2d.models[0]?.url || ''
+    if (!live2d.models.some(item => item.url === live2d.current)) {
+      live2d.current = live2d.models[0]?.url || ''
+    }
+    live2d.enabled = !!raw.enabled && live2d.models.length > 0
+  } catch (e) {
+    //本地存档损坏时按未启用处理
+  }
+}
+
+function saveLive2dPref() {
+  try {
+    localStorage.setItem(LIVE2D_KEY, JSON.stringify({
+      enabled: live2d.enabled,
+      models: live2d.models,
+      current: live2d.current,
+    }))
+  } catch (e) {
+    //隐私模式下写不进 localStorage, 只影响下次打开时的记忆
+  }
+}
+
+function selectLive2dModel(item) {
+  live2d.current = item.url
+  live2dError.value = ''
+  saveLive2dPref()
+}
+
+function onLive2dToggle() {
+  if (live2d.enabled && !live2d.models.length) {
+    live2d.enabled = false
+    ElMessage({message: t('aiLive2dNoModel'), type: 'warning', plain: true, grouping: true})
+  }
+  saveLive2dPref()
+}
+
+function addLive2dModel() {
+  const name = newModelName.value.trim()
+  const url = newModelUrl.value.trim()
+  if (!name) {
+    ElMessage({message: t('aiLive2dNameEmpty'), type: 'warning', plain: true, grouping: true})
+    return
+  }
+  if (!/\.model3\.json($|\?)/i.test(url)) {
+    ElMessage({message: t('aiLive2dUrlInvalid'), type: 'warning', plain: true, grouping: true})
+    return
+  }
+  if (live2d.models.some(item => item.url === url)) {
+    ElMessage({message: t('aiLive2dExist'), type: 'warning', plain: true, grouping: true})
+    return
+  }
+  live2d.models.push({name, url})
+  live2d.current = url
+  live2dError.value = ''
+  newModelName.value = ''
+  newModelUrl.value = ''
+  saveLive2dPref()
+  ElMessage({message: t('aiLive2dAdded'), type: 'success', plain: true, grouping: true})
+}
+
+function removeLive2dModel(item) {
+  const index = live2d.models.findIndex(model => model.url === item.url)
+  if (index < 0) return
+  live2d.models.splice(index, 1)
+  if (live2d.current === item.url) {
+    live2d.current = live2d.models[0]?.url || ''
+  }
+  if (!live2d.models.length) live2d.enabled = false
+  live2dError.value = ''
+  saveLive2dPref()
+}
+
+function onLive2dError(message) {
+  live2dError.value = message || t('aiLive2dLoadFail')
+}
 
 //AI 记忆面板: 画像 + 记忆条目, 打开时拉取
 const memoryVisible = ref(false)
@@ -1216,14 +1370,106 @@ function editProfile() {
 <style scoped lang="scss">
 .ai-page {
   display: flex;
-  flex-direction: column;
+  //默认全屏对话; 启用形象后由 .ai-live2d 占据左侧, 右侧对话区自适应
+  flex-direction: row;
   height: 100%;
   min-height: 0;
   width: 100%;
   max-width: 100%;
   //兜底: 任何子元素都不该把整页撑出横向滚动条(手机端会被裁断)
-  overflow-x: hidden;
+  overflow: hidden;
   background: var(--extra-light-fill, transparent);
+}
+
+//右侧对话区: 原页面内容整体包在这里, 保持原有的纵向布局
+.ai-right {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-live2d {
+  flex-shrink: 0;
+  position: relative;
+  width: clamp(280px, 32%, 420px);
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--el-border-color-lighter);
+  background:
+    radial-gradient(120% 60% at 50% 100%, var(--el-color-primary-light-9) 0%, transparent 70%),
+    linear-gradient(180deg, var(--el-fill-color-blank) 0%, var(--el-fill-color-light) 100%);
+
+  .live2d-glow {
+    position: absolute;
+    left: 50%;
+    bottom: 18%;
+    width: 68%;
+    padding-bottom: 68%;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--el-color-primary-light-9) 0%, transparent 68%);
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  .live2d-foot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    background: linear-gradient(180deg, transparent 0%, var(--el-fill-color-light) 62%);
+  }
+
+  .live2d-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .live2d-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+    transition: color .16s ease, border-color .16s ease;
+
+    &:hover {
+      color: var(--el-color-primary);
+      border-color: var(--el-border-color-lighter);
+    }
+  }
+
+  .live2d-err {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-color-danger);
+    background: var(--el-color-danger-light-9);
+    overflow-wrap: anywhere;
+  }
 }
 
 .ai-head {
@@ -1272,6 +1518,15 @@ function editProfile() {
   }
 
   .head-memory {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+
+  .head-live2d {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -2221,6 +2476,13 @@ function editProfile() {
   }
 }
 
+@media (max-width: 900px) {
+  //窄屏放不下左右分栏, 形象区让位, 对话恢复全屏
+  .ai-live2d {
+    display: none;
+  }
+}
+
 @media (max-width: 600px) {
   .ai-head {
     padding: 13px 14px;
@@ -2339,6 +2601,132 @@ function editProfile() {
       line-height: 1.55;
       color: var(--el-text-color-placeholder);
     }
+  }
+}
+
+.live2d-dialog {
+  .live2d-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .live2d-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-fill-color-blank);
+  }
+
+  .row-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .row-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .row-desc {
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+  }
+
+  .panel-label {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .model-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .model-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--el-border-color-extra-light);
+    border-radius: 8px;
+    background: var(--el-fill-color-light);
+    cursor: pointer;
+
+    &.active {
+      border-color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+
+      .model-dot {
+        border-color: var(--el-color-primary);
+        background: var(--el-color-primary);
+        box-shadow: inset 0 0 0 2px var(--el-color-primary-light-9);
+      }
+    }
+  }
+
+  .model-dot {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid var(--el-border-color);
+    border-radius: 50%;
+    box-sizing: border-box;
+  }
+
+  .model-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .model-del {
+    flex-shrink: 0;
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    background: none;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--el-color-danger);
+    }
+  }
+
+  .model-empty {
+    padding: 10px 0;
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .add-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .el-button {
+      align-self: flex-start;
+    }
+  }
+
+  .panel-tip {
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--el-text-color-placeholder);
   }
 }
 </style>

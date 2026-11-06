@@ -25,4 +25,6 @@ mail-vue/node_modules
 mail-vue/dist
 .wrangler
 .venv
+.deploy
+mail-worker/wrangler.local.toml
 git-tools.js
