@@ -398,7 +398,7 @@
           </div>
           <div class="upload-tip">{{ $t('aiLive2dUploadTip') }}</div>
           <input ref="fileInputRef" class="hidden-input" type="file" multiple
-                 accept=".zip,.json,.moc3,.png,.jpg,.jpeg,.webp,.mtn,.wav,.mp3"
+                 accept=".zip,.json,.moc,.moc3,.png,.jpg,.jpeg,.webp,.mtn,.wav,.mp3"
                  @change="onModelFilesChange"/>
           <input ref="folderInputRef" class="hidden-input" type="file" webkitdirectory multiple
                  @change="onModelFilesChange"/>
