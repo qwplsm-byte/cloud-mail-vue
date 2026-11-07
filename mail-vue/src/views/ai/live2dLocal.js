@@ -332,6 +332,46 @@ function repairFlatPaths(entries, settingsEntry, settingsJson) {
   }
 }
 
+//VTube Studio 导出的包常把动作/表情放在 Animation、Exp3 目录里, 但设置文件里不登记,
+//导致模型只"站着不动"。这里把包里所有未被引用的 exp3/motion3 补进设置, 让全部状态可用。
+function addPackageStates(json, entries, settingsEntry) {
+  const fileRefs = json.FileReferences
+  if (!fileRefs || typeof fileRefs !== 'object') return
+  const baseDir = dirname(settingsEntry.path)
+  const used = new Set(collectRefs(json, []).map(ref => resolveRef(settingsEntry.path, normalizePath(ref))))
+  const stem = path => {
+    const name = path.split('/').pop() || path
+    return name.replace(/\.(exp3|motion3|expression)\.json$/i, '').replace(/\.json$/i, '')
+  }
+
+  const addExpressions = []
+  const addMotions = {}
+  for (const entry of entries) {
+    if (entry === settingsEntry || used.has(entry.path)) continue
+    const lower = entry.path.toLowerCase()
+    if (lower.endsWith('.exp3.json')) {
+      addExpressions.push({Name: stem(entry.path), File: relativePath(baseDir, entry.path)})
+    } else if (lower.endsWith('.motion3.json')) {
+      //IDLE 单独成组用于待机循环, 其余动作各自成组, 供随机播放
+      const group = /idle/i.test(stem(entry.path)) ? 'Idle' : stem(entry.path)
+      if (!addMotions[group]) addMotions[group] = []
+      addMotions[group].push({File: relativePath(baseDir, entry.path), FadeInTime: 1, FadeOutTime: 1})
+    }
+  }
+
+  if (addExpressions.length) {
+    const list = Array.isArray(fileRefs.Expressions) ? fileRefs.Expressions : []
+    fileRefs.Expressions = list.concat(addExpressions)
+  }
+  if (Object.keys(addMotions).length) {
+    const motions = fileRefs.Motions && typeof fileRefs.Motions === 'object' ? fileRefs.Motions : {}
+    for (const [group, list] of Object.entries(addMotions)) {
+      motions[group] = (motions[group] || []).concat(list)
+    }
+    fileRefs.Motions = motions
+  }
+}
+
 export async function saveUploadedModel({id, name, entries, candidate}) {
   if (!candidate) throw fail('NO_MODEL')
   const settingsEntry = candidate.entry
@@ -369,6 +409,7 @@ export async function saveUploadedModel({id, name, entries, candidate}) {
     return null
   }
   const rewritten = JSON.parse(JSON.stringify(originalJson))
+  if (!cubism2) addPackageStates(rewritten, entries, settingsEntry)
   transformRefs(rewritten, value => {
     if (!looksLikeRef(value)) return value
     const originalPath = resolveRef(settingsEntry.path, value)

@@ -50,6 +50,9 @@ let baseWidth = 1
 let baseHeight = 1
 let destroyed = false
 let loadSeq = 0
+let idleTimer = null
+let expressionTimer = null
+let tapHandler = null
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -108,24 +111,36 @@ function fit() {
 //Cubism 5 给每个网格加了"乘色/屏色"(multiplyColor/screenColor), 这套渲染器还没有实现:
 //这类网格原本靠贴图 alpha 叠一层白色高光, 直接按原贴图绘制就会露出一整块黑(或白)色块,
 //最常见的就是鼻子上那个黑方块。定位到这类网格后, 把承载它们的部件整个隐藏。
-function hideColorEffectParts(live2d) {
+//同时表情参数需要在这里补写一次(渲染器自身没有把表情应用到模型上)。
+function installModelHooks(live2d) {
   const core = live2d.internalModel && live2d.internalModel.coreModel
   const raw = core && core._model && core._model.drawables
-  if (!raw || !raw.multiplyColors || !raw.screenColors || !raw.parentPartIndices) return
   const parts = new Set()
-  const count = core.getDrawableCount()
-  for (let i = 0; i < count; i++) {
-    const part = raw.parentPartIndices[i]
-    if (part < 0) continue
-    const mi = i * 4
-    //黑乘色 + 接近白色的屏色, 说明这块贴图只是拿来当遮罩用的
-    const dark = raw.multiplyColors[mi] < 0.05 && raw.multiplyColors[mi + 1] < 0.05 && raw.multiplyColors[mi + 2] < 0.05
-    const bright = raw.screenColors[mi] > 0.9 && raw.screenColors[mi + 1] > 0.9 && raw.screenColors[mi + 2] > 0.9
-    if (dark && bright) parts.add(part)
+  if (raw && raw.multiplyColors && raw.screenColors && raw.parentPartIndices) {
+    const count = core.getDrawableCount()
+    for (let i = 0; i < count; i++) {
+      const part = raw.parentPartIndices[i]
+      if (part < 0) continue
+      const mi = i * 4
+      //黑乘色 + 接近白色的屏色, 说明这块贴图只是拿来当遮罩用的
+      const dark = raw.multiplyColors[mi] < 0.05 && raw.multiplyColors[mi + 1] < 0.05 && raw.multiplyColors[mi + 2] < 0.05
+      const bright = raw.screenColors[mi] > 0.9 && raw.screenColors[mi + 1] > 0.9 && raw.screenColors[mi + 2] > 0.9
+      if (dark && bright) parts.add(part)
+    }
   }
-  if (!parts.size) return
+  const expressionManager = live2d.internalModel && live2d.internalModel.motionManager
+    ? live2d.internalModel.motionManager.expressionManager
+    : null
   const origin = core.update.bind(core)
   core.update = (...args) => {
+    //表情要在生成网格之前写进参数, 否则切换表情不会生效
+    if (expressionManager) {
+      try {
+        expressionManager.update(core, performance.now() / 1000)
+      } catch (e) {
+        //表情更新失败忽略
+      }
+    }
     origin(...args)
     for (const part of parts) {
       try {
@@ -137,7 +152,83 @@ function hideColorEffectParts(live2d) {
   }
 }
 
+//模型自带的全部状态都要用起来: 待机动作循环、表情轮流切换、点一下换动作和表情
+function enableStates(live2d) {
+  const motionManager = live2d.internalModel && live2d.internalModel.motionManager
+  if (!motionManager) return
+  const groups = Object.keys(motionManager.definitions || {})
+  //待机组优先按名字找(IDLE/idle/待机), 找不到就退化成第一组
+  const idleGroup = groups.find(group => /idle|待机|闲置/i.test(group)) || groups[0] || ''
+  const actionGroups = groups.filter(group => group !== idleGroup)
+  const expressions = motionManager.expressionManager
+  const hasExpression = expressions && expressions.definitions && expressions.definitions.length
+
+  const loopIdle = async () => {
+    if (destroyed || model !== live2d) return
+    if (idleGroup) {
+      try {
+        await motionManager.startRandomMotion(idleGroup, 1)
+      } catch (e) {
+        //动作播放失败不影响展示
+      }
+    }
+    if (destroyed || model !== live2d) return
+    idleTimer = setTimeout(loopIdle, 1200)
+  }
+  loopIdle()
+
+  //表情按间隔随机轮换, 让各种状态都出现
+  const switchExpression = async () => {
+    if (destroyed || model !== live2d) return
+    if (hasExpression) {
+      try {
+        await expressions.setRandomExpression()
+      } catch (e) {
+        //表情切换失败忽略
+      }
+    }
+    if (destroyed || model !== live2d) return
+    expressionTimer = setTimeout(switchExpression, 8000 + Math.random() * 6000)
+  }
+  if (hasExpression) expressionTimer = setTimeout(switchExpression, 3000)
+
+  const onTap = () => {
+    if (destroyed || model !== live2d) return
+    if (actionGroups.length) {
+      const group = actionGroups[Math.floor(Math.random() * actionGroups.length)]
+      try {
+        motionManager.startRandomMotion(group, 2)
+      } catch (e) {
+        //忽略播放失败
+      }
+    }
+    if (hasExpression) {
+      try {
+        expressions.setRandomExpression()
+      } catch (e) {
+        //忽略切换失败
+      }
+    }
+  }
+  if (app && app.view) {
+    tapHandler = onTap
+    app.view.addEventListener('pointerdown', tapHandler)
+  }
+}
+
 function cleanup() {
+  if (idleTimer) {
+    clearTimeout(idleTimer)
+    idleTimer = null
+  }
+  if (expressionTimer) {
+    clearTimeout(expressionTimer)
+    expressionTimer = null
+  }
+  if (app && app.view && tapHandler) {
+    app.view.removeEventListener('pointerdown', tapHandler)
+    tapHandler = null
+  }
   if (observer) {
     observer.disconnect()
     observer = null
@@ -215,7 +306,8 @@ async function mount() {
       return
     }
 
-    hideColorEffectParts(live2d)
+    installModelHooks(live2d)
+    enableStates(live2d)
 
     app.stage.addChild(live2d)
     live2d.scale.set(1)
