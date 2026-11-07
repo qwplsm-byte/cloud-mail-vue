@@ -3,7 +3,8 @@
     <!-- 左侧半身 Live2D 形象; 关闭开关或没有任何模型时整块不渲染, 布局自动降级回原来的全屏对话 -->
     <aside v-if="live2dShown" class="ai-live2d">
       <div class="live2d-glow"></div>
-      <Live2DView :url="currentLive2d.type === 'url' ? currentLive2d.url : ''"
+      <Live2DView ref="live2dRef"
+                  :url="currentLive2d.type === 'url' ? currentLive2d.url : ''"
                   :local-id="currentLive2d.type === 'local' ? currentLive2d.id : ''"
                   @ready="live2dError = ''" @error="onLive2dError"/>
       <div class="live2d-foot">
@@ -490,6 +491,28 @@ const uploadingModel = ref(false)
 const fileInputRef = ref(null)
 const folderInputRef = ref(null)
 loadLive2dPref()
+
+//对话驱动形象: 思考时显示"加载", 回答成功按内容给个好脸色, 出错流冷汗
+const live2dRef = ref(null)
+const HAPPY_STATES = ['＞＜', '爱心眼', '兔牙', '脸红', '屑屑眼']
+const SAD_STATES = ['流冷汗', '黑脸']
+
+function live2dHold(name) {
+  const view = live2dRef.value
+  if (view && view.hasState(name)) view.hold(name)
+}
+
+function live2dReact(candidates) {
+  const view = live2dRef.value
+  if (!view) return
+  const pool = candidates.filter(name => view.hasState(name))
+  if (!pool.length) return
+  view.react(pool[Math.floor(Math.random() * pool.length)])
+}
+
+function live2dClear() {
+  if (live2dRef.value) live2dRef.value.clear()
+}
 
 const currentLive2d = computed(() => live2d.models.find(item => item.key === live2d.current) || live2d.models[0] || null)
 //关闭开关或没有可用模型时, 侧栏整体不渲染, 对话页回到原来的全屏布局
@@ -1283,6 +1306,8 @@ async function submit(text, files = []) {
   loading.value = true
   startTimer()
   scrollToBottom()
+  //思考期间一直保持"加载"状态
+  live2dHold('加载')
 
   try {
     const data = await aiAssistantPlan(text, history, useSearch, searchEngine.value, searchEndpoint.value.trim(), files, thinking.value)
@@ -1292,10 +1317,17 @@ async function submit(text, files = []) {
     bot.sources = data?.sources || []
     bot.searchFailed = !!data?.searchFailed
     bot.status = bot.plan.length ? 'pending' : 'done'
+    //有操作计划时戴单片眼镜装懂, 普通回答换个好脸色
+    if (bot.plan.length) {
+      live2dHold('单片眼镜')
+    } else {
+      live2dReact(HAPPY_STATES)
+    }
   } catch (e) {
     bot.loading = false
     bot.error = true
     bot.content = errorText(e)
+    live2dReact(SAD_STATES)
   } finally {
     stopTimer()
     loading.value = false
@@ -1345,13 +1377,16 @@ async function runPlan(msg) {
 
   msg.status = 'executing'
   scrollToBottom()
+  live2dHold('加载')
 
   try {
     const data = await aiAssistantExecute(actions)
     msg.results = data?.results || []
     msg.status = 'done'
+    live2dReact(HAPPY_STATES)
   } catch (e) {
     msg.status = 'pending'
+    live2dReact(SAD_STATES)
     ElMessage({message: e?.message || t('reqFailErrorMsg'), type: 'error', plain: true, grouping: true})
   }
   scrollToBottom()
@@ -1369,6 +1404,7 @@ function clearConversation() {
     type: 'warning',
   }).then(() => {
     messages.value = []
+    live2dClear()
     //清掉快照, 否则刚删的消息会被判定为"已存"而不再回写
     savedSnapshot.clear()
     //同时清掉服务端记录, 否则换设备会重新拉回旧对话

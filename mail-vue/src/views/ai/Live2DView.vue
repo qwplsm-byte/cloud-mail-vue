@@ -51,7 +51,6 @@ let baseHeight = 1
 let destroyed = false
 let loadSeq = 0
 let idleTimer = null
-let expressionTimer = null
 let tapHandler = null
 
 function loadScript(src) {
@@ -111,9 +110,9 @@ function fit() {
 //Cubism 5 给每个网格加了"乘色/屏色"(multiplyColor/screenColor), 这套渲染器还没有实现:
 //这类网格原本靠贴图 alpha 叠一层白色高光, 直接按原贴图绘制就会露出一整块黑(或白)色块,
 //最常见的就是鼻子上那个黑方块。定位到这类网格后, 把承载它们的部件整个隐藏。
-//同时表情参数需要在这里补写一次(渲染器自身没有把表情应用到模型上)。
 function installModelHooks(live2d) {
   const core = live2d.internalModel && live2d.internalModel.coreModel
+  if (import.meta.env.DEV) window.__modelCore = core
   const raw = core && core._model && core._model.drawables
   const parts = new Set()
   if (raw && raw.multiplyColors && raw.screenColors && raw.parentPartIndices) {
@@ -128,19 +127,10 @@ function installModelHooks(live2d) {
       if (dark && bright) parts.add(part)
     }
   }
-  const expressionManager = live2d.internalModel && live2d.internalModel.motionManager
-    ? live2d.internalModel.motionManager.expressionManager
-    : null
   const origin = core.update.bind(core)
   core.update = (...args) => {
-    //表情要在生成网格之前写进参数, 否则切换表情不会生效
-    if (expressionManager) {
-      try {
-        expressionManager.update(core, performance.now() / 1000)
-      } catch (e) {
-        //表情更新失败忽略
-      }
-    }
+    //表情开关要在生成网格之前写进参数
+    applyStateValues()
     origin(...args)
     for (const part of parts) {
       try {
@@ -152,7 +142,98 @@ function installModelHooks(live2d) {
   }
 }
 
-//模型自带的全部状态都要用起来: 待机动作循环、表情轮流切换、点一下换动作和表情
+//模型自带的表情大多是参数开关(值 0/1), 直接按参数读写最稳:
+//记录每个状态影响哪些参数, 切换时先把状态用到的参数全部还原成默认值, 再写目标值,
+//否则"默认体型/体型1/体型2"这类互斥档位会互相残留
+let stateCore = null
+let stateIds = []
+let stateDefaults = {}
+let stateMap = {}
+let stateNames = []
+let stateTimer = null
+//当前生效的状态参数 [[参数id, 值], ...]; 每帧在生成网格前写进去
+let activeState = []
+
+async function loadStates(live2d) {
+  const motionManager = live2d.internalModel && live2d.internalModel.motionManager
+  const em = motionManager && motionManager.expressionManager
+  const core = live2d.internalModel && live2d.internalModel.coreModel
+  if (!em || !core) return
+  stateCore = core
+  const defs = em.definitions || []
+  const ids = new Set()
+  for (let i = 0; i < defs.length; i++) {
+    try {
+      const expression = await em.loadExpression(i)
+      if (!expression || !expression._parameters) continue
+      //服装/手势这类切换项不参与对话驱动, 免得聊两句衣服和体型就变了
+      const params = expression._parameters.filter(item => !/^(Clothes|Movement|Lean)/i.test(String(item.parameterId || '')))
+      if (!params.length) continue
+      stateMap[defs[i].Name] = params.map(item => [item.parameterId, item.value, item.blendType])
+      params.forEach(item => ids.add(item.parameterId))
+    } catch (e) {
+      //单个表情加载失败跳过
+    }
+  }
+  stateNames = Object.keys(stateMap)
+  stateIds = [...ids]
+  stateIds.forEach(id => {
+    try {
+      stateDefaults[id] = core.getParameterValueById(id)
+    } catch (e) {
+      stateDefaults[id] = 0
+    }
+  })
+}
+
+//按名字模糊找状态: 精确匹配 > 包含匹配
+function findState(name) {
+  if (!name) return ''
+  if (stateMap[name]) return name
+  const hit = stateNames.find(key => key.includes(name) || name.includes(key))
+  return hit || ''
+}
+
+function clearStates() {
+  activeState = []
+}
+
+//把当前状态写进模型参数; 渲染器每帧末尾都会把参数恢复成存档值, 所以必须每帧重写
+function applyStateValues() {
+  if (!stateCore || !activeState.length) return
+  for (const [id, value] of activeState) {
+    try {
+      stateCore.setParameterValueById(id, value)
+    } catch (e) {
+      //参数不存在时忽略
+    }
+  }
+}
+
+//切换状态: hold=true 时保持到下次切换, 否则过一会儿自动回到面无表情
+function applyState(name, hold = false) {
+  if (!stateCore) return false
+  const key = findState(name)
+  if (!key) return false
+  activeState = stateMap[key].map(([id, value, blend]) => [
+    id,
+    //Add 混合在默认值上加, 其余按覆盖处理
+    blend === 0 ? (stateDefaults[id] || 0) + value : value,
+  ])
+  if (stateTimer) {
+    clearTimeout(stateTimer)
+    stateTimer = null
+  }
+  if (!hold) {
+    stateTimer = setTimeout(() => {
+      stateTimer = null
+      activeState = []
+    }, 4200)
+  }
+  return true
+}
+
+//模型自带的全部状态都要用起来: 待机动作循环、点一下换动作和表情
 function enableStates(live2d) {
   const motionManager = live2d.internalModel && live2d.internalModel.motionManager
   if (!motionManager) return
@@ -160,8 +241,6 @@ function enableStates(live2d) {
   //待机组优先按名字找(IDLE/idle/待机), 找不到就退化成第一组
   const idleGroup = groups.find(group => /idle|待机|闲置/i.test(group)) || groups[0] || ''
   const actionGroups = groups.filter(group => group !== idleGroup)
-  const expressions = motionManager.expressionManager
-  const hasExpression = expressions && expressions.definitions && expressions.definitions.length
 
   const loopIdle = async () => {
     if (destroyed || model !== live2d) return
@@ -177,21 +256,6 @@ function enableStates(live2d) {
   }
   loopIdle()
 
-  //表情按间隔随机轮换, 让各种状态都出现
-  const switchExpression = async () => {
-    if (destroyed || model !== live2d) return
-    if (hasExpression) {
-      try {
-        await expressions.setRandomExpression()
-      } catch (e) {
-        //表情切换失败忽略
-      }
-    }
-    if (destroyed || model !== live2d) return
-    expressionTimer = setTimeout(switchExpression, 8000 + Math.random() * 6000)
-  }
-  if (hasExpression) expressionTimer = setTimeout(switchExpression, 3000)
-
   const onTap = () => {
     if (destroyed || model !== live2d) return
     if (actionGroups.length) {
@@ -202,12 +266,9 @@ function enableStates(live2d) {
         //忽略播放失败
       }
     }
-    if (hasExpression) {
-      try {
-        expressions.setRandomExpression()
-      } catch (e) {
-        //忽略切换失败
-      }
+    //点一下随机换个表情
+    if (stateNames.length) {
+      applyState(stateNames[Math.floor(Math.random() * stateNames.length)])
     }
   }
   if (app && app.view) {
@@ -221,10 +282,16 @@ function cleanup() {
     clearTimeout(idleTimer)
     idleTimer = null
   }
-  if (expressionTimer) {
-    clearTimeout(expressionTimer)
-    expressionTimer = null
+  if (stateTimer) {
+    clearTimeout(stateTimer)
+    stateTimer = null
   }
+  stateCore = null
+  stateIds = []
+  stateDefaults = {}
+  stateMap = {}
+  stateNames = []
+  activeState = []
   if (app && app.view && tapHandler) {
     app.view.removeEventListener('pointerdown', tapHandler)
     tapHandler = null
@@ -308,6 +375,9 @@ async function mount() {
 
     installModelHooks(live2d)
     enableStates(live2d)
+    //状态按需加载, 不阻塞首帧
+    loadStates(live2d).catch(() => {
+    })
 
     app.stage.addChild(live2d)
     live2d.scale.set(1)
@@ -336,6 +406,14 @@ async function mount() {
 
 watch(() => [props.url, props.localId], () => {
   if (!destroyed) mount()
+})
+
+//给页面用: react('加载') 保持到下次切换, react('爱心眼', false) 几秒后自动复原
+defineExpose({
+  react: (name) => applyState(name),
+  hold: (name) => applyState(name, true),
+  clear: () => clearStates(),
+  hasState: (name) => !!findState(name),
 })
 
 onMounted(() => {
