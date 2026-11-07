@@ -4,8 +4,9 @@ import { unzip } from 'fflate'
 const DB_NAME = 'ai_live2d_local'
 const DB_VERSION = 1
 const STORE = 'models'
-//单个模型解包后的体积上限, 避免把浏览器/手机存储塞满
-const MAX_BYTES = 180 * 1024 * 1024
+//最多支持上传 400MB 的模型文件(zip/多选文件总量), 解包后上限 512MB
+const MAX_UPLOAD_BYTES = 400 * 1024 * 1024
+const MAX_MODEL_BYTES = 512 * 1024 * 1024
 //需要被引用的资源类型, 用于从设置 JSON 里收集相对路径
 const REF_EXT = /\.(json|png|jpg|jpeg|webp|gif|moc|moc3|mtn|wav|mp3)$/i
 
@@ -199,16 +200,19 @@ export async function readUploadFiles(fileList) {
   if (!files.length) return []
 
   if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
-    if (files[0].size > MAX_BYTES) throw fail('TOO_LARGE')
+    if (files[0].size > MAX_UPLOAD_BYTES) throw fail('TOO_LARGE')
     let entries
     try {
       entries = await unzipToEntries(files[0])
     } catch (e) {
       throw fail('ZIP_INVALID')
     }
+    if (entries.reduce((sum, entry) => sum + entry.data.length, 0) > MAX_MODEL_BYTES) throw fail('TOO_LARGE')
     return entries
   }
 
+  const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0)
+  if (totalSize > MAX_UPLOAD_BYTES) throw fail('TOO_LARGE')
   const hasRelative = files.some(file => file.webkitRelativePath)
   const entries = []
   for (const file of files) {
@@ -395,7 +399,7 @@ export async function saveUploadedModel({id, name, entries, candidate}) {
   }
 
   const total = entries.reduce((sum, entry) => sum + entry.data.length, 0)
-  if (total > MAX_BYTES) throw fail('TOO_LARGE')
+  if (total > MAX_MODEL_BYTES) throw fail('TOO_LARGE')
 
   const record = {
     id,
