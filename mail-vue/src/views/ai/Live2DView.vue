@@ -105,6 +105,38 @@ function fit() {
   model.y = 0
 }
 
+//Cubism 5 给每个网格加了"乘色/屏色"(multiplyColor/screenColor), 这套渲染器还没有实现:
+//这类网格原本靠贴图 alpha 叠一层白色高光, 直接按原贴图绘制就会露出一整块黑(或白)色块,
+//最常见的就是鼻子上那个黑方块。定位到这类网格后, 把承载它们的部件整个隐藏。
+function hideColorEffectParts(live2d) {
+  const core = live2d.internalModel && live2d.internalModel.coreModel
+  const raw = core && core._model && core._model.drawables
+  if (!raw || !raw.multiplyColors || !raw.screenColors || !raw.parentPartIndices) return
+  const parts = new Set()
+  const count = core.getDrawableCount()
+  for (let i = 0; i < count; i++) {
+    const part = raw.parentPartIndices[i]
+    if (part < 0) continue
+    const mi = i * 4
+    //黑乘色 + 接近白色的屏色, 说明这块贴图只是拿来当遮罩用的
+    const dark = raw.multiplyColors[mi] < 0.05 && raw.multiplyColors[mi + 1] < 0.05 && raw.multiplyColors[mi + 2] < 0.05
+    const bright = raw.screenColors[mi] > 0.9 && raw.screenColors[mi + 1] > 0.9 && raw.screenColors[mi + 2] > 0.9
+    if (dark && bright) parts.add(part)
+  }
+  if (!parts.size) return
+  const origin = core.update.bind(core)
+  core.update = (...args) => {
+    origin(...args)
+    for (const part of parts) {
+      try {
+        core.setPartOpacityByIndex(part, 0)
+      } catch (e) {
+        //忽略越界部件
+      }
+    }
+  }
+}
+
 function cleanup() {
   if (observer) {
     observer.disconnect()
@@ -182,6 +214,8 @@ async function mount() {
       if (app === appInstance) app = null
       return
     }
+
+    hideColorEffectParts(live2d)
 
     app.stage.addChild(live2d)
     live2d.scale.set(1)
